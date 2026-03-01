@@ -70,6 +70,14 @@ func (h *Handler) Definition(ctx context.Context, params *protocol.DefinitionPar
 	return ResolveDefinition(ctx, h.index, h.index.Root(), h.positionEncoding, params)
 }
 
+// References returns all links pointing to the target file. Delegates to ResolveReferences.
+func (h *Handler) References(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+	if h.index == nil {
+		return nil, nil
+	}
+	return ResolveReferences(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+}
+
 // DocumentSymbol returns the document outline (TOC) as a tree of headings.
 func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]interface{}, error) {
 	if h.index == nil {
