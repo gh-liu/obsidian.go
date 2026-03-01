@@ -51,8 +51,9 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 	h.positionEncoding = extractPositionEncoding(params)
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
-			DefinitionProvider: true,
-			ReferencesProvider: true,
+			DefinitionProvider:     true,
+			ReferencesProvider:     true,
+			DocumentSymbolProvider: true,
 		},
 		ServerInfo: &protocol.ServerInfo{
 			Name:    "obsidian-lsp",
@@ -67,6 +68,25 @@ func (h *Handler) Definition(ctx context.Context, params *protocol.DefinitionPar
 		return nil, nil
 	}
 	return ResolveDefinition(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+}
+
+// DocumentSymbol returns the document outline (TOC) as a tree of headings.
+func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]interface{}, error) {
+	if h.index == nil {
+		return nil, nil
+	}
+	symbols, err := ResolveDocumentSymbol(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(symbols) == 0 {
+		return nil, nil
+	}
+	out := make([]interface{}, len(symbols))
+	for i := range symbols {
+		out[i] = symbols[i]
+	}
+	return out, nil
 }
 
 // extractPositionEncoding reads position encoding from LSP InitializeParams.
