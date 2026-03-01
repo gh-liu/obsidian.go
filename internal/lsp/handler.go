@@ -6,10 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf16"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
-	"github.com/gh-liu/obsidian.go/parse"
 	"go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
@@ -61,6 +59,14 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 			Version: "0.1.0",
 		},
 	}, nil
+}
+
+// Definition resolves link target at position to the target file. Delegates to ResolveDefinition.
+func (h *Handler) Definition(ctx context.Context, params *protocol.DefinitionParams) ([]protocol.Location, error) {
+	if h.index == nil {
+		return nil, nil
+	}
+	return ResolveDefinition(ctx, h.index, h.index.Root(), h.positionEncoding, params)
 }
 
 // extractPositionEncoding reads position encoding from LSP InitializeParams.
