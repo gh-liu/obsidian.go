@@ -45,7 +45,7 @@ func (h *Handler) executeNew(ctx context.Context, root, templateDir string, args
 		targetPath = fmt.Sprintf("Untitled %s.md", time.Now().Format("2006-01-02 15-04-05"))
 	}
 	targetPath = ensureMdExt(targetPath)
-	return h.createNoteFromTemplate(ctx, root, templateDir, "default", targetPath)
+	return h.createNoteFromTemplate(ctx, root, templateDir, template.DefaultName, targetPath)
 }
 
 func (h *Handler) executeNewFromTemplate(ctx context.Context, root, templateDir string, args []any) (any, error) {
@@ -65,11 +65,12 @@ func (h *Handler) createNoteFromTemplate(ctx context.Context, root, templateDir,
 	if h.settings.ShouldIgnore(targetPath) {
 		return nil, fmt.Errorf("path is ignored: %s", targetPath)
 	}
-	fullPath := filepath.Join(root, targetPath)
-	if err := ensureParentDir(fullPath); err != nil {
+
+	path := filepath.Join(root, targetPath)
+	if err := ensureParentDir(path); err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(fullPath); err == nil {
+	if _, err := os.Stat(path); err == nil {
 		return nil, fmt.Errorf("file already exists: %s", targetPath)
 	}
 
@@ -77,22 +78,20 @@ func (h *Handler) createNoteFromTemplate(ctx context.Context, root, templateDir,
 	if err != nil {
 		return nil, fmt.Errorf("load template %s: %w", templateName, err)
 	}
-
 	title := strings.TrimSuffix(filepath.Base(targetPath), ".md")
-	args := template.NewVars(title)
-	rendered := tmpl.Execute(args)
+	content := tmpl.Execute(template.NewVars(title))
 
-	if err := os.WriteFile(fullPath, []byte(rendered), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 
-	if err := h.index.Add(targetPath, []byte(rendered)); err != nil {
+	if err := h.index.Add(targetPath, []byte(content)); err != nil {
 		h.log.Debug("index add failed after create", "path", targetPath, "err", err)
 	}
 
-	fileURI := string(uri.File(fullPath))
 	h.log.Info("created note", "path", targetPath, "template", templateName)
-	return map[string]any{"uri": fileURI}, nil
+
+	return map[string]any{"uri": uri.File(path)}, nil
 }
 
 func (h *Handler) executeInsertTemplate(ctx context.Context, templateDir string, args []any) (any, error) {
@@ -115,13 +114,13 @@ func (h *Handler) executeInsertTemplate(ctx context.Context, templateDir string,
 	}
 
 	// Title from document path (filename without .md)
+	// TODO: use title field of Doc
 	fullPath := uri.URI(docURI).Filename()
 	title := strings.TrimSuffix(filepath.Base(fullPath), ".md")
 	if title == "" {
 		title = "Untitled"
 	}
-	vars := template.NewVars(title)
-	rendered := tmpl.Execute(vars)
+	content := tmpl.Execute(template.NewVars(title))
 
 	edit := protocol.WorkspaceEdit{
 		Changes: map[protocol.DocumentURI][]protocol.TextEdit{
@@ -130,13 +129,11 @@ func (h *Handler) executeInsertTemplate(ctx context.Context, templateDir string,
 					Start: *pos,
 					End:   *pos,
 				},
-				NewText: rendered,
+				NewText: content,
 			}},
 		},
 	}
-	applyParams := &protocol.ApplyWorkspaceEditParams{
-		Edit: edit,
-	}
+	applyParams := &protocol.ApplyWorkspaceEditParams{Edit: edit}
 	var result protocol.ApplyWorkspaceEditResponse
 	if _, err := h.conn.Call(ctx, protocol.MethodWorkspaceApplyEdit, applyParams, &result); err != nil {
 		return nil, fmt.Errorf("apply edit: %w", err)
@@ -144,7 +141,9 @@ func (h *Handler) executeInsertTemplate(ctx context.Context, templateDir string,
 	if !result.Applied && result.FailureReason != "" {
 		return nil, fmt.Errorf("edit not applied: %s", result.FailureReason)
 	}
+
 	h.log.Info("inserted template", "template", templateName, "uri", docURI)
+
 	return map[string]any{"applied": result.Applied}, nil
 }
 

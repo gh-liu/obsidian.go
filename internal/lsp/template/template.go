@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const defaultName = "default"
+const DefaultName = "default"
 
 const defaultTemplate = `---
 id: {{id}}
@@ -25,13 +25,13 @@ type Template struct {
 // Load load template from templateDir/name.md.
 func Load(templateDir, name string) (*Template, error) {
 	if name == "" {
-		name = defaultName
+		name = DefaultName
 	}
 	path := filepath.Join(templateDir, name+".md")
 	temp := Template{path: path}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) && name == defaultName {
+		if os.IsNotExist(err) && name == DefaultName {
 			temp.Content = defaultTemplate
 			return &temp, nil
 		}
