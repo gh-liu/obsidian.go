@@ -21,6 +21,7 @@ type Handler struct {
 	log              *slog.Logger
 	settings         *Settings
 	index            *index.Index
+	docStore         *DocStore
 	positionEncoding string // "utf-8" or "utf-16", from LSP client
 }
 
@@ -32,6 +33,7 @@ func NewHandler(ctx context.Context, conn jsonrpc2.Conn, server protocol.Server,
 		log:      logger,
 		settings: &Settings{},
 		index:    nil, // set after Initialize
+		docStore: newDocStore(),
 	}
 	return h, ctx, nil
 }
@@ -54,6 +56,9 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 			DefinitionProvider:     true,
 			ReferencesProvider:     true,
 			DocumentSymbolProvider: true,
+			CompletionProvider: &protocol.CompletionOptions{
+				TriggerCharacters: []string{"[", "#"},
+			},
 			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
 				Commands: []string{cmdNew, cmdNewFromTemplate},
 			},
@@ -79,6 +84,14 @@ func (h *Handler) References(ctx context.Context, params *protocol.ReferencePara
 		return nil, nil
 	}
 	return ResolveReferences(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+}
+
+// Completion returns completion items for wiki links ([[file]], [[#heading]], [[path#heading]]).
+func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
+	if h.index == nil || h.docStore == nil {
+		return nil, nil
+	}
+	return ResolveCompletion(ctx, h.index, h.index.Root(), h.positionEncoding, h.docStore, params)
 }
 
 // DocumentSymbol returns the document outline (TOC) as a tree of headings.
@@ -134,6 +147,47 @@ func extractPositionEncoding(params *protocol.InitializeParams) string {
 // DidChangeConfiguration is called when workspace settings change.
 func (h *Handler) DidChangeConfiguration(ctx context.Context, params *protocol.DidChangeConfigurationParams) error {
 	h.applySettings(params.Settings)
+	return nil
+}
+
+// DidOpen stores document content for completion (unsaved state).
+func (h *Handler) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
+	if h.docStore == nil || params == nil {
+		return nil
+	}
+	h.docStore.put(params.TextDocument.URI, params.TextDocument.Text)
+	return nil
+}
+
+// DidChange updates document content from incremental or full sync.
+func (h *Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
+	if h.docStore == nil || params == nil {
+		return nil
+	}
+	if len(params.ContentChanges) == 0 {
+		return nil
+	}
+	// Full sync: single change with omitted range (zero value)
+	r := params.ContentChanges[0].Range
+	if len(params.ContentChanges) == 1 && r.Start.Line == 0 && r.Start.Character == 0 && r.End.Line == 0 && r.End.Character == 0 {
+		h.docStore.put(params.TextDocument.URI, params.ContentChanges[0].Text)
+		return nil
+	}
+	// Incremental: apply changes to existing content
+	if h.docStore.get(params.TextDocument.URI) == "" {
+		// Document not in store (e.g. DidOpen not sent); cannot apply incremental
+		return nil
+	}
+	h.docStore.applyChanges(params.TextDocument.URI, params.ContentChanges)
+	return nil
+}
+
+// DidClose removes document from store.
+func (h *Handler) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
+	if h.docStore == nil || params == nil {
+		return nil
+	}
+	h.docStore.remove(params.TextDocument.URI)
 	return nil
 }
 

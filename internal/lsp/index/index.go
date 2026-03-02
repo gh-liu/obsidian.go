@@ -187,6 +187,15 @@ func (x *Index) ResolveLinkTargetToPath(target string) string {
 			return target + ".md"
 		}
 	}
+	// Obsidian: link by basename when path not found (e.g. [[CS_GO++compiler]] for folder/CS_GO++compiler.md)
+	targetBase := strings.TrimSuffix(strings.ToLower(target), ".md")
+	for p := range x.byPath {
+		base := filepath.Base(p)
+		baseNoExt := strings.TrimSuffix(strings.ToLower(base), ".md")
+		if baseNoExt == targetBase || base == target {
+			return p
+		}
+	}
 	return ""
 }
 
