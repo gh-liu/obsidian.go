@@ -70,19 +70,14 @@ func (h *Handler) createNoteFromTemplate(ctx context.Context, root, templateDir,
 		return nil, fmt.Errorf("file already exists: %s", targetPath)
 	}
 
-	content, err := template.Load(templateDir, templateName)
+	tmpl, err := template.Load(templateDir, templateName)
 	if err != nil {
 		return nil, fmt.Errorf("load template %s: %w", templateName, err)
 	}
-	if content == "" && templateName == "default" {
-		content = template.BuiltinDefault()
-	} else if content == "" {
-		return nil, fmt.Errorf("template not found: %s", templateName)
-	}
 
 	title := strings.TrimSuffix(filepath.Base(targetPath), ".md")
-	args := template.NowArgs(title)
-	rendered := template.Execute(content, args)
+	args := template.NewVars(title)
+	rendered := tmpl.Execute(args)
 
 	if err := os.WriteFile(fullPath, []byte(rendered), 0644); err != nil {
 		return nil, fmt.Errorf("write file: %w", err)
