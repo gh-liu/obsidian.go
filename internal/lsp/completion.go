@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -26,8 +25,8 @@ type wikiLinkContext struct {
 
 // ResolveCompletion returns completion items for Obsidian wiki links.
 // Trigger: [[ (file completion), [[# (current-file heading), [[path# (heading of path).
-func ResolveCompletion(ctx context.Context, idx *index.Index, root, encoding string, store *DocStore, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
-	if idx == nil || store == nil || params == nil {
+func ResolveCompletion(ctx context.Context, idx *index.Index, root, encoding string, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
+	if idx == nil || params == nil {
 		return nil, nil
 	}
 	enc := PositionEncoder{encoding: encoding}
@@ -40,7 +39,7 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, root, encoding str
 	}
 	rel = filepath.ToSlash(rel)
 
-	lines := docLines(store, docURI, fullPath)
+	lines := docLines(idx, rel)
 	lineIdx := int(params.Position.Line)
 	if lineIdx < 0 || lineIdx >= len(lines) {
 		return nil, nil
@@ -69,7 +68,7 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, root, encoding str
 	if ctx2.completeFiles {
 		items = completeFiles(idx, ctx2, enc, line, lineIdx, cursorChar)
 	} else {
-		items = completeHeadings(ctx, idx, root, store, docURI, rel, fullPath, ctx2, enc, line, lineIdx, cursorChar)
+		items = completeHeadings(idx, root, rel, ctx2, enc, line, lineIdx, cursorChar)
 	}
 	if len(items) == 0 {
 		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
@@ -152,15 +151,11 @@ func parseWikiLinkContext(lines []string, lineIdx, byteOff int) *wikiLinkContext
 	}
 }
 
-// docLines returns document lines from store, or from disk if not in store.
-func docLines(store *DocStore, docURI protocol.DocumentURI, fullPath string) []string {
-	content := store.get(docURI)
-	if content == "" {
-		raw, err := os.ReadFile(fullPath)
-		if err != nil {
-			return nil
-		}
-		content = string(raw)
+// docLines returns document lines from index (open-file cache or disk).
+func docLines(idx *index.Index, rel string) []string {
+	content, err := idx.GetContent(rel)
+	if err != nil {
+		return nil
 	}
 	return strings.Split(content, "\n")
 }
@@ -214,20 +209,13 @@ func completeFiles(idx *index.Index, ctx *wikiLinkContext, enc PositionEncoder, 
 	return items
 }
 
-func completeHeadings(ctx context.Context, idx *index.Index, root string, store *DocStore, docURI protocol.DocumentURI, currentRel, fullPath string, wikiCtx *wikiLinkContext, enc PositionEncoder, line string, lineIdx, cursorChar int) []protocol.CompletionItem {
+func completeHeadings(idx *index.Index, root string, currentRel string, wikiCtx *wikiLinkContext, enc PositionEncoder, line string, lineIdx, cursorChar int) []protocol.CompletionItem {
 	var headings []*parse.Heading
 	if wikiCtx.targetPath == "" {
-		// Current file: parse from store (may have unsaved content) or disk
-		content := store.get(docURI)
-		if content == "" {
-			raw, _ := os.ReadFile(fullPath)
-			content = string(raw)
-		}
-		if content != "" {
-			doc, _ := parse.Parse([]byte(content), currentRel)
-			if doc != nil {
-				headings = doc.Headings
-			}
+		// Current file: use index (has unsaved content from DidOpen/DidChange)
+		doc := idx.GetByPath(currentRel)
+		if doc != nil {
+			headings = doc.Headings
 		}
 	} else {
 		// Other file: use index

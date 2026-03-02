@@ -21,19 +21,17 @@ type Handler struct {
 	log              *slog.Logger
 	settings         *Settings
 	index            *index.Index
-	docStore         *DocStore
 	positionEncoding string // "utf-8" or "utf-16", from LSP client
 }
 
 // NewHandler creates the LSP handler. Vault root is resolved from Initialize params.
 func NewHandler(ctx context.Context, conn jsonrpc2.Conn, server protocol.Server, logger *slog.Logger) (*Handler, context.Context, error) {
 	h := &Handler{
-		Server:   server,
-		conn:     conn,
-		log:      logger,
+		Server: server,
+		conn:   conn,
+		log:    logger,
 		settings: &Settings{},
-		index:    nil, // set after Initialize
-		docStore: newDocStore(),
+		index:  nil, // set after Initialize
 	}
 	return h, ctx, nil
 }
@@ -88,10 +86,10 @@ func (h *Handler) References(ctx context.Context, params *protocol.ReferencePara
 
 // Completion returns completion items for wiki links ([[file]], [[#heading]], [[path#heading]]).
 func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
-	if h.index == nil || h.docStore == nil {
+	if h.index == nil {
 		return nil, nil
 	}
-	return ResolveCompletion(ctx, h.index, h.index.Root(), h.positionEncoding, h.docStore, params)
+	return ResolveCompletion(ctx, h.index, h.index.Root(), h.positionEncoding, params)
 }
 
 // DocumentSymbol returns the document outline (TOC) as a tree of headings.
@@ -150,49 +148,70 @@ func (h *Handler) DidChangeConfiguration(ctx context.Context, params *protocol.D
 	return nil
 }
 
-// DidOpen stores document content for completion (unsaved state).
+// DidOpen stores document content in index for completion (unsaved state).
 func (h *Handler) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
-	if h.docStore == nil || params == nil {
+	if h.index == nil || params == nil {
 		return nil
 	}
-	h.docStore.put(params.TextDocument.URI, params.TextDocument.Text)
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil
+	}
+	if err := h.index.SetContent(rel, []byte(params.TextDocument.Text)); err != nil {
+		h.log.Debug("index set content failed", "path", rel, "err", err)
+	}
 	return nil
 }
 
-// DidChange updates document content from incremental or full sync.
+// DidChange updates document content in index from incremental or full sync.
 func (h *Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	if h.docStore == nil || params == nil {
+	if h.index == nil || params == nil {
 		return nil
 	}
 	if len(params.ContentChanges) == 0 {
 		return nil
 	}
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil
+	}
 	// Full sync: single change with omitted range (zero value)
 	r := params.ContentChanges[0].Range
 	if len(params.ContentChanges) == 1 && r.Start.Line == 0 && r.Start.Character == 0 && r.End.Line == 0 && r.End.Character == 0 {
-		h.docStore.put(params.TextDocument.URI, params.ContentChanges[0].Text)
+		if err := h.index.SetContent(rel, []byte(params.ContentChanges[0].Text)); err != nil {
+			h.log.Debug("index set content failed", "path", rel, "err", err)
+		}
 		return nil
 	}
 	// Incremental: apply changes to existing content
-	if h.docStore.get(params.TextDocument.URI) == "" {
-		// Document not in store (e.g. DidOpen not sent); cannot apply incremental
+	content, err := h.index.GetContent(rel)
+	if err != nil || content == "" {
+		// Document not in index (e.g. DidOpen not sent); cannot apply incremental
 		return nil
 	}
-	h.docStore.applyChanges(params.TextDocument.URI, params.ContentChanges)
+	newContent := applyContentChanges(content, params.ContentChanges)
+	if err := h.index.SetContent(rel, []byte(newContent)); err != nil {
+		h.log.Debug("index set content failed", "path", rel, "err", err)
+	}
 	return nil
 }
 
-// DidClose removes document from store.
+// DidClose reverts document to disk content in index.
 func (h *Handler) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	if h.docStore == nil || params == nil {
+	if h.index == nil || params == nil {
 		return nil
 	}
-	h.docStore.remove(params.TextDocument.URI)
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil
+	}
+	h.index.ClearContent(rel)
 	return nil
 }
 
 // DidChangeWatchedFiles handles file create/change/delete events from the client.
 // Replaces fsnotify for incremental index updates.
+// Skips Changed for files that are open (have unsaved content) to avoid overwriting.
 func (h *Handler) DidChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
 	if h.index == nil || params == nil {
 		return nil
@@ -230,6 +249,9 @@ func (h *Handler) DidChangeWatchedFiles(ctx context.Context, params *protocol.Di
 				h.log.Debug("indexed", "path", rel)
 			}
 		case protocol.FileChangeTypeChanged:
+			if h.index.HasOpenContent(rel) {
+				continue
+			}
 			content, err := os.ReadFile(fullPath)
 			if err != nil {
 				h.log.Debug("read file failed", "path", rel, "err", err)
@@ -356,4 +378,60 @@ func toStrings(v []any) []string {
 		}
 	}
 	return out
+}
+
+// uriToRelPath converts document URI to path relative to root. Returns empty if outside root.
+func uriToRelPath(docURI protocol.DocumentURI, root string) string {
+	fullPath := uri.URI(docURI).Filename()
+	rel, err := filepath.Rel(root, fullPath)
+	if err != nil {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	if strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return rel
+}
+
+// applyContentChanges applies LSP content changes to document. Full sync if any change has no Range.
+func applyContentChanges(content string, changes []protocol.TextDocumentContentChangeEvent) string {
+	for _, c := range changes {
+		if c.Range.Start.Line == 0 && c.Range.Start.Character == 0 && c.Range.End.Line == 0 && c.Range.End.Character == 0 {
+			content = c.Text
+			continue
+		}
+		lines := strings.Split(content, "\n")
+		startLine := int(c.Range.Start.Line)
+		endLine := int(c.Range.End.Line)
+		startChar := int(c.Range.Start.Character)
+		endChar := int(c.Range.End.Character)
+		if startLine < 0 || startLine >= len(lines) {
+			continue
+		}
+		if endLine >= len(lines) {
+			endLine = len(lines) - 1
+		}
+		var before, after string
+		before = strings.Join(lines[:startLine], "\n")
+		if startLine > 0 {
+			before += "\n"
+		}
+		before += lines[startLine][:min(startChar, len(lines[startLine]))]
+		if endLine < len(lines) {
+			after = lines[endLine][min(endChar, len(lines[endLine])):]
+			if endLine+1 < len(lines) {
+				after += "\n" + strings.Join(lines[endLine+1:], "\n")
+			}
+		}
+		content = before + c.Text + after
+	}
+	return content
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -68,11 +67,11 @@ func sourceContext(idx *index.Index, root string, params *protocol.DefinitionPar
 	if doc == nil {
 		return "", nil, nil
 	}
-	content, err := os.ReadFile(fullPath)
+	content, err := idx.GetContent(rel)
 	if err != nil {
 		return "", nil, nil
 	}
-	return rel, doc, strings.Split(string(content), "\n")
+	return rel, doc, strings.Split(content, "\n")
 }
 
 // linkAtPosition returns the link containing (lineIdx, byteOff), or nil.
@@ -103,11 +102,11 @@ func targetLocation(idx *index.Index, root, targetPath, anchor string, enc Posit
 		Start: protocol.Position{Line: 0, Character: 0},
 		End:   protocol.Position{Line: 0, Character: 0},
 	}
-	if anchor != "" {
+		if anchor != "" {
 		doc := idx.GetByPath(targetPath)
 		if doc != nil {
 			if h := findHeading(doc, anchor); h != nil {
-				rng = rangeToProtocol(targetPath, root, h.Range, enc)
+				rng = rangeToProtocol(idx, targetPath, h.Range, enc)
 			}
 		}
 	}
@@ -125,7 +124,7 @@ func targetLocationBlock(idx *index.Index, root, targetPath, blockID string, enc
 	if doc != nil {
 		for _, b := range doc.Blocks {
 			if b != nil && b.ID == blockID {
-				rng = rangeToProtocol(targetPath, root, b.Range, enc)
+				rng = rangeToProtocol(idx, targetPath, b.Range, enc)
 				break
 			}
 		}
@@ -156,12 +155,12 @@ func normalizeHeadingAnchor(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func rangeToProtocol(relPath, root string, r parse.Range, enc PositionEncoder) protocol.Range {
-	content, err := os.ReadFile(filepath.Join(root, relPath))
+func rangeToProtocol(idx *index.Index, relPath string, r parse.Range, enc PositionEncoder) protocol.Range {
+	content, err := idx.GetContent(relPath)
 	if err != nil {
 		return protocol.Range{}
 	}
-	lines := strings.Split(string(content), "\n")
+	lines := strings.Split(content, "\n")
 	startChar := enc.ByteToChar(lineAt(lines, r.Start.Line), r.Start.Character)
 	endChar := enc.ByteToChar(lineAt(lines, r.End.Line), r.End.Character)
 	return protocol.Range{

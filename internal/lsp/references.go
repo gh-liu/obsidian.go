@@ -44,7 +44,7 @@ func ResolveReferences(ctx context.Context, idx *index.Index, root, encoding str
 			}
 			loc := protocol.Location{
 				URI:   uri.File(filepath.Join(root, p)),
-				Range: rangeToProtocol(p, root, link.Range, enc),
+				Range: rangeToProtocol(idx, p, link.Range, enc),
 			}
 			out = append(out, loc)
 		}

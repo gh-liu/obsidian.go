@@ -20,15 +20,14 @@ func TestResolveCompletion_FileLinks(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	store := newDocStore()
-	store.put(uri.File(filepath.Join(dir, "note.md")), "See [[")
+	_ = idx.SetContent("note.md", []byte("See [["))
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
 			Position:     protocol.Position{Line: 0, Character: 6},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", store, params)
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -59,18 +58,17 @@ func TestResolveCompletion_HeadingLinks(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	store := newDocStore()
-	store.put(uri.File(filepath.Join(dir, "note.md")), `# Title
+	_ = idx.SetContent("note.md", []byte(`# Title
 ## Section 1
 ## Section 2
-[[#`)
+[[#`))
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
 			Position:     protocol.Position{Line: 3, Character: 3},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", store, params)
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -100,15 +98,14 @@ func TestResolveCompletion_HeadingByBasename(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	store := newDocStore()
-	store.put(uri.File(filepath.Join(dir, "note.md")), "See [[CS_GO++compiler#")
+	_ = idx.SetContent("note.md", []byte("See [[CS_GO++compiler#"))
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
 			Position:     protocol.Position{Line: 0, Character: 22},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", store, params)
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -137,15 +134,14 @@ id: note-a
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	store := newDocStore()
-	store.put(uri.File(filepath.Join(dir, "note.md")), "[[")
+	_ = idx.SetContent("note.md", []byte("[["))
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
 			Position:     protocol.Position{Line: 0, Character: 2},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", store, params)
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -187,8 +183,7 @@ func TestResolveCompletion_HeadingTriggerRace(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	store := newDocStore()
-	store.put(uri.File(filepath.Join(dir, "note.md")), "[[1770130136-TOWG") // no # yet
+	_ = idx.SetContent("note.md", []byte("[[1770130136-TOWG")) // no # yet
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -196,7 +191,7 @@ func TestResolveCompletion_HeadingTriggerRace(t *testing.T) {
 		},
 		Context: &protocol.CompletionContext{TriggerCharacter: "#", TriggerKind: protocol.CompletionTriggerKindTriggerCharacter},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", store, params)
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -221,15 +216,14 @@ func TestResolveCompletion_OutsideWikiLink(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	store := newDocStore()
-	store.put(uri.File(filepath.Join(dir, "note.md")), "plain text")
+	_ = idx.SetContent("note.md", []byte("plain text"))
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
 			Position:     protocol.Position{Line: 0, Character: 5},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", store, params)
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}

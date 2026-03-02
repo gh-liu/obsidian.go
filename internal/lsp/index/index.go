@@ -20,12 +20,13 @@ import (
 type IgnoreFunc func(path string) bool
 
 type Index struct {
-	mu     sync.RWMutex
-	log    *slog.Logger
-	root   string
-	ignore IgnoreFunc
-	byPath map[string]*parse.Doc
-	byID   map[string]string // id → path (only when frontmatter has id)
+	mu            sync.RWMutex
+	log           *slog.Logger
+	root          string
+	ignore        IgnoreFunc
+	byPath        map[string]*parse.Doc
+	byID          map[string]string // id → path (only when frontmatter has id)
+	contentByPath map[string]string // path → raw content for open files (unsaved)
 }
 
 // New creates an empty index for the given vault root.
@@ -37,11 +38,12 @@ func New(root string, log *slog.Logger, ignore IgnoreFunc) *Index {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Index{
-		root:   abs,
-		log:    log,
-		ignore: ignore,
-		byPath: make(map[string]*parse.Doc),
-		byID:   make(map[string]string),
+		root:          abs,
+		log:           log,
+		ignore:        ignore,
+		byPath:        make(map[string]*parse.Doc),
+		byID:          make(map[string]string),
+		contentByPath: make(map[string]string),
 	}
 }
 
@@ -135,6 +137,7 @@ func (x *Index) Remove(path string) {
 		delete(x.byID, doc.ID)
 	}
 	delete(x.byPath, path)
+	delete(x.contentByPath, path)
 }
 
 // Update re-parses a file. Called when didChangeWatchedFiles reports Changed.
@@ -208,6 +211,78 @@ func (x *Index) ListPaths() []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+// SetContent stores raw content for an open file and updates the parsed Doc.
+// Called on DidOpen/DidChange. path is relative to root.
+func (x *Index) SetContent(path string, content []byte) error {
+	path = filepath.ToSlash(path)
+	doc, err := parse.Parse(content, path)
+	if err != nil {
+		return err
+	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.contentByPath[path] = string(content)
+	if old, ok := x.byPath[path]; ok && old.ID != "" && old.ID != doc.ID {
+		delete(x.byID, old.ID)
+	}
+	x.byPath[path] = doc
+	if doc.ID != "" {
+		x.byID[doc.ID] = path
+	}
+	return nil
+}
+
+// ClearContent removes open-file content and reverts to disk. Called on DidClose.
+// If the file does not exist on disk, removes it from the index.
+func (x *Index) ClearContent(path string) {
+	path = filepath.ToSlash(path)
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	delete(x.contentByPath, path)
+	content, err := os.ReadFile(filepath.Join(x.root, path))
+	if err != nil {
+		if doc, ok := x.byPath[path]; ok && doc.ID != "" {
+			delete(x.byID, doc.ID)
+		}
+		delete(x.byPath, path)
+		return
+	}
+	doc, err := parse.Parse(content, path)
+	if err != nil {
+		return
+	}
+	if old, ok := x.byPath[path]; ok && old.ID != "" && old.ID != doc.ID {
+		delete(x.byID, old.ID)
+	}
+	x.byPath[path] = doc
+	if doc.ID != "" {
+		x.byID[doc.ID] = path
+	}
+}
+
+// GetContent returns raw content for the path: from open-file cache if set, else from disk.
+func (x *Index) GetContent(path string) (string, error) {
+	path = filepath.ToSlash(path)
+	x.mu.RLock()
+	if c, ok := x.contentByPath[path]; ok {
+		x.mu.RUnlock()
+		return c, nil
+	}
+	root := x.root
+	x.mu.RUnlock()
+	raw, err := os.ReadFile(filepath.Join(root, path))
+	return string(raw), err
+}
+
+// HasOpenContent returns true if the path has unsaved content (is open).
+func (x *Index) HasOpenContent(path string) bool {
+	path = filepath.ToSlash(path)
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	_, ok := x.contentByPath[path]
+	return ok
 }
 
 // collectMdFiles walks root and returns relative paths of all .md files.
