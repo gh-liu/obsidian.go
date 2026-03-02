@@ -41,15 +41,18 @@ func ResolveDefinition(ctx context.Context, idx *index.Index, root, encoding str
 			return nil, nil
 		}
 	} else {
-		// Same-note link [[#heading]]: target is current file
+		// Same-note link [[#heading]] or [[#^block-id]]: target is current file
 		targetPath = rel
 	}
 
-	anchor := ""
-	if link.Anchor != nil {
-		anchor = link.Anchor.Text
+	var loc protocol.Location
+	if link.Block != nil {
+		loc = targetLocationBlock(idx, root, targetPath, link.Block.ID, enc)
+	} else if link.Anchor != nil {
+		loc = targetLocation(idx, root, targetPath, link.Anchor.Text, enc)
+	} else {
+		loc = targetLocation(idx, root, targetPath, "", enc)
 	}
-	loc := targetLocation(idx, root, targetPath, anchor, enc)
 	return []protocol.Location{loc}, nil
 }
 
@@ -75,9 +78,8 @@ func sourceContext(idx *index.Index, root string, params *protocol.DefinitionPar
 // linkAtPosition returns the link containing (lineIdx, byteOff), or nil.
 // Includes both cross-note [[file#anchor]] and same-note [[#anchor]] links.
 func linkAtPosition(doc *parse.Doc, lineIdx, byteOff int) *parse.Link {
-	for i := range doc.Links {
-		link := &doc.Links[i]
-		if inRange(lineIdx, byteOff, link.Range) {
+	for _, link := range doc.Links {
+		if link != nil && inRange(lineIdx, byteOff, link.Range) {
 			return link
 		}
 	}
@@ -112,11 +114,29 @@ func targetLocation(idx *index.Index, root, targetPath, anchor string, enc Posit
 	return protocol.Location{URI: uri, Range: rng}
 }
 
+// targetLocationBlock builds protocol.Location for targetPath at block ID.
+func targetLocationBlock(idx *index.Index, root, targetPath, blockID string, enc PositionEncoder) protocol.Location {
+	uri := uri.File(filepath.Join(root, targetPath))
+	rng := protocol.Range{
+		Start: protocol.Position{Line: 0, Character: 0},
+		End:   protocol.Position{Line: 0, Character: 0},
+	}
+	doc := idx.GetByPath(targetPath)
+	if doc != nil {
+		for _, b := range doc.Blocks {
+			if b != nil && b.ID == blockID {
+				rng = rangeToProtocol(targetPath, root, b.Range, enc)
+				break
+			}
+		}
+	}
+	return protocol.Location{URI: uri, Range: rng}
+}
+
 func findHeading(doc *parse.Doc, anchor string) *parse.Heading {
 	norm := normalizeHeadingAnchor(anchor)
-	for i := range doc.Headings {
-		h := &doc.Headings[i]
-		if strings.EqualFold(anchor, h.Text) || normalizeHeadingAnchor(h.Text) == norm {
+	for _, h := range doc.Headings {
+		if h != nil && (strings.EqualFold(anchor, h.Text) || normalizeHeadingAnchor(h.Text) == norm) {
 			return h
 		}
 	}

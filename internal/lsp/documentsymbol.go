@@ -68,7 +68,7 @@ func ResolveDocumentSymbol(ctx context.Context, idx *index.Index, root, encoding
 	// Build tree: each heading is child of the nearest preceding heading with smaller level.
 	nodes := make([]*docSymbolNode, len(doc.Headings))
 	for i := range doc.Headings {
-		h := &doc.Headings[i]
+		h := doc.Headings[i]
 		selRange := rangeToProtocolFromLines(lines, h.Range, enc)
 		endLine := sectionEndLines[i]
 		endChar := len(lineAt(lines, endLine))

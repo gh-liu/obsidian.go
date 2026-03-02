@@ -75,7 +75,7 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, root, encoding str
 		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
 	}
 	return &protocol.CompletionList{
-		Items: items,
+		Items:        items,
 		IsIncomplete: false,
 	}, nil
 }
@@ -215,7 +215,7 @@ func completeFiles(idx *index.Index, ctx *wikiLinkContext, enc PositionEncoder, 
 }
 
 func completeHeadings(ctx context.Context, idx *index.Index, root string, store *DocStore, docURI protocol.DocumentURI, currentRel, fullPath string, wikiCtx *wikiLinkContext, enc PositionEncoder, line string, lineIdx, cursorChar int) []protocol.CompletionItem {
-	var headings []parse.Heading
+	var headings []*parse.Heading
 	if wikiCtx.targetPath == "" {
 		// Current file: parse from store (may have unsaved content) or disk
 		content := store.get(docURI)

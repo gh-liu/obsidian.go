@@ -75,7 +75,7 @@ updatedAt: 2026-02-28 18:38:25
 			path: "h.md",
 			want: &Doc{
 				Path: "h.md",
-				Headings: []Heading{
+				Headings: []*Heading{
 					{Level: 1, Text: "Title", Range: Range{Start: Pos{0, 0}, End: Pos{0, 7}}},
 					{Level: 2, Text: "Section 1", Range: Range{Start: Pos{1, 0}, End: Pos{1, 12}}},
 					{Level: 3, Text: "Sub", Range: Range{Start: Pos{2, 0}, End: Pos{2, 7}}},
@@ -88,7 +88,7 @@ updatedAt: 2026-02-28 18:38:25
 			path:    "links.md",
 			want: &Doc{
 				Path: "links.md",
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkWiki, Target: &Doc{ID: "note"}, Range: Range{Start: Pos{0, 4}, End: Pos{0, 12}}},
 					{Kind: LinkWiki, Target: &Doc{ID: "other"}, Alias: "alias", Range: Range{Start: Pos{0, 17}, End: Pos{0, 32}}},
 					{Kind: LinkWiki, Target: &Doc{ID: "file"}, Anchor: &Heading{Text: "heading"}, Range: Range{Start: Pos{0, 37}, End: Pos{0, 53}}},
@@ -101,7 +101,7 @@ updatedAt: 2026-02-28 18:38:25
 			path:    "same.md",
 			want: &Doc{
 				Path: "same.md",
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkWiki, Target: nil, Anchor: &Heading{Text: "Section title"}, Range: Range{Start: Pos{0, 8}, End: Pos{0, 26}}},
 				},
 			},
@@ -112,7 +112,7 @@ updatedAt: 2026-02-28 18:38:25
 			path:    "nested.md",
 			want: &Doc{
 				Path: "nested.md",
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkWiki, Target: &Doc{ID: "file"}, Anchor: &Heading{Text: "Heading 1#Subheading"}, Range: Range{Start: Pos{0, 0}, End: Pos{0, 29}}},
 				},
 			},
@@ -123,7 +123,7 @@ updatedAt: 2026-02-28 18:38:25
 			path:    "md.md",
 			want: &Doc{
 				Path: "md.md",
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkMarkdown, Target: &Doc{ID: "path/to/file.md"}, Alias: "text", Range: Range{Start: Pos{0, 0}, End: Pos{0, 23}}},
 				},
 			},
@@ -141,12 +141,25 @@ Content with #tag and #inline here`,
 			},
 		},
 		{
+			name: "block ID in document",
+			content: `Some paragraph here ^abc-123
+Another line ^block_99`,
+			path: "blocks.md",
+			want: &Doc{
+				Path: "blocks.md",
+				Blocks: []*Block{
+					{ID: "abc-123", Range: Range{Start: Pos{0, 19}, End: Pos{0, 28}}},
+					{ID: "block_99", Range: Range{Start: Pos{1, 12}, End: Pos{1, 22}}},
+				},
+			},
+		},
+		{
 			name:    "wiki link with block ref",
 			content: `[[file#^block-id]]`,
 			path:    "block.md",
 			want: &Doc{
 				Path: "block.md",
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkWiki, Target: &Doc{ID: "file"}, Block: &Block{ID: "block-id"}, Range: Range{Start: Pos{0, 0}, End: Pos{0, 18}}},
 				},
 			},
@@ -157,7 +170,7 @@ Content with #tag and #inline here`,
 			path:    "same-block.md",
 			want: &Doc{
 				Path: "same-block.md",
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkWiki, Target: nil, Block: &Block{ID: "my-block"}, Range: Range{Start: Pos{0, 4}, End: Pos{0, 18}}},
 				},
 			},
@@ -168,7 +181,7 @@ Content with #tag and #inline here`,
 			path:    "block-alias.md",
 			want: &Doc{
 				Path: "block-alias.md",
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkWiki, Target: &Doc{ID: "note"}, Block: &Block{ID: "block-id"}, Alias: "click here", Range: Range{Start: Pos{0, 0}, End: Pos{0, 29}}},
 				},
 			},
@@ -190,11 +203,11 @@ See [[other]] and #inline-tag
 				ID:      "doc-1",
 				Aliases: []string{"a1", "a2"},
 				Tags:    []string{"t1"},
-				Headings: []Heading{
+				Headings: []*Heading{
 					{Level: 1, Text: "Title", Range: Range{Start: Pos{5, 0}, End: Pos{5, 7}}},
 					{Level: 2, Text: "Section", Range: Range{Start: Pos{7, 0}, End: Pos{7, 10}}},
 				},
-				Links: []Link{
+				Links: []*Link{
 					{Kind: LinkWiki, Target: &Doc{ID: "other"}, Range: Range{Start: Pos{6, 4}, End: Pos{6, 13}}},
 				},
 			},

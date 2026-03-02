@@ -31,9 +31,8 @@ func ResolveReferences(ctx context.Context, idx *index.Index, root, encoding str
 		if d == nil {
 			continue
 		}
-		for i := range d.Links {
-			link := &d.Links[i]
-			if link.Target == nil {
+		for _, link := range d.Links {
+			if link == nil || link.Target == nil {
 				continue
 			}
 			if link.Anchor != nil {
