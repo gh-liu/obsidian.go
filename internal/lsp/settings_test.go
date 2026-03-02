@@ -11,9 +11,9 @@ func TestHandler_DidChangeConfiguration(t *testing.T) {
 	h, _, _ := NewHandler(context.Background(), nil, nil, nil)
 	// Simulate workspace settings: obsidian.ignores
 	params := &protocol.DidChangeConfigurationParams{
-		Settings: map[string]interface{}{
-			"obsidian": map[string]interface{}{
-				"ignores": []interface{}{`^templates/`, `\.git`},
+		Settings: map[string]any{
+			"obsidian": map[string]any{
+				"ignores": []any{`^templates/`, `\.git`},
 			},
 		},
 	}

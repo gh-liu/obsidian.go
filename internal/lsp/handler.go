@@ -60,7 +60,7 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 				TriggerCharacters: []string{"[", "#"},
 			},
 			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
-				Commands: []string{cmdNew, cmdNewFromTemplate},
+				Commands: []string{cmdNew, cmdNewFromTemplate, cmdInsertTemplate},
 			},
 		},
 		ServerInfo: &protocol.ServerInfo{
@@ -95,7 +95,7 @@ func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionPar
 }
 
 // DocumentSymbol returns the document outline (TOC) as a tree of headings.
-func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]interface{}, error) {
+func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]any, error) {
 	if h.index == nil {
 		return nil, nil
 	}
@@ -106,7 +106,7 @@ func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentS
 	if len(symbols) == 0 {
 		return nil, nil
 	}
-	out := make([]interface{}, len(symbols))
+	out := make([]any, len(symbols))
 	for i := range symbols {
 		out[i] = symbols[i]
 	}
@@ -119,7 +119,7 @@ func extractPositionEncoding(params *protocol.InitializeParams) string {
 	if params == nil {
 		return "utf-16"
 	}
-	if opts, ok := params.InitializationOptions.(map[string]interface{}); ok {
+	if opts, ok := params.InitializationOptions.(map[string]any); ok {
 		if s, ok := opts["positionEncoding"].(string); ok && (s == "utf-8" || s == "utf-16") {
 			return s
 		}
@@ -284,7 +284,7 @@ func (h *Handler) fetchSettings(ctx context.Context) {
 	params := protocol.ConfigurationParams{
 		Items: []protocol.ConfigurationItem{{Section: "obsidian"}},
 	}
-	var result []interface{}
+	var result []any
 	if _, err := h.conn.Call(ctx, "workspace/configuration", &params, &result); err != nil {
 		h.log.Debug("workspace/configuration failed", "err", err)
 		return
@@ -320,12 +320,12 @@ func (h *Handler) registerFileWatchers(ctx context.Context) {
 // applySettings extracts settings from LSP workspace configuration.
 // Supports: { "ignores": [...], "templatePath": "..." } (workspace/configuration result)
 // or { "obsidian": { "ignores": [...], "templatePath": "..." } } (didChangeConfiguration).
-func (h *Handler) applySettings(settings interface{}) {
+func (h *Handler) applySettings(settings any) {
 	section := extractObsidianSection(settings)
 	if section == nil {
 		return
 	}
-	if v, ok := section["ignores"].([]interface{}); ok {
+	if v, ok := section["ignores"].([]any); ok {
 		h.settings.SetIgnorePatterns(toStrings(v))
 	}
 	if s, ok := section["templatePath"].(string); ok {
@@ -333,22 +333,22 @@ func (h *Handler) applySettings(settings interface{}) {
 	}
 }
 
-func extractObsidianSection(settings interface{}) map[string]interface{} {
+func extractObsidianSection(settings any) map[string]any {
 	if settings == nil {
 		return nil
 	}
-	m, ok := settings.(map[string]interface{})
+	m, ok := settings.(map[string]any)
 	if !ok {
 		return nil
 	}
 	// workspace/configuration returns section content directly
-	if section, ok := m["obsidian"].(map[string]interface{}); ok {
+	if section, ok := m["obsidian"].(map[string]any); ok {
 		return section
 	}
 	return m
 }
 
-func toStrings(v []interface{}) []string {
+func toStrings(v []any) []string {
 	var out []string
 	for _, p := range v {
 		if s, ok := p.(string); ok {
