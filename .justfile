@@ -1,2 +1,2 @@
 build-lsp:
-    go build -o obsidian-lsp ./cmd/lsp/
+    go build -o obsidian_ls ./cmd/obsidian_ls
