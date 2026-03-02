@@ -213,6 +213,18 @@ func (x *Index) ListPaths() []string {
 	return out
 }
 
+// RangePaths calls fn for each (path, doc) under a single RLock.
+// Return false from fn to stop iteration.
+func (x *Index) RangePaths(fn func(path string, doc *parse.Doc) bool) {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	for p, doc := range x.byPath {
+		if !fn(p, doc) {
+			return
+		}
+	}
+}
+
 // SetContent stores raw content for an open file and updates the parsed Doc.
 // Called on DidOpen/DidChange. path is relative to root.
 func (x *Index) SetContent(path string, content []byte) error {
@@ -274,6 +286,16 @@ func (x *Index) GetContent(path string) (string, error) {
 	x.mu.RUnlock()
 	raw, err := os.ReadFile(filepath.Join(root, path))
 	return string(raw), err
+}
+
+// GetLines returns document lines for path from open-file cache or disk.
+// Returns error if content cannot be read.
+func (x *Index) GetLines(path string) ([]string, error) {
+	content, err := x.GetContent(path)
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(content, "\n"), nil
 }
 
 // HasOpenContent returns true if the path has unsaved content (is open).

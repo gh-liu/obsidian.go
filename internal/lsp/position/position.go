@@ -1,18 +1,18 @@
-package lsp
+package position
 
 import (
 	"unicode/utf16"
 )
 
-// PositionEncoder converts between LSP character offset and UTF-8 byte offset.
+// Encoder converts between LSP character offset and UTF-8 byte offset.
 // LSP clients may use utf-8 or utf-16 for Position.Character.
-type PositionEncoder struct {
-	encoding string // "utf-8" or "utf-16"
+type Encoder struct {
+	Encoding string // "utf-8" or "utf-16"
 }
 
 // CharToByte converts LSP character offset to UTF-8 byte offset in line.
-func (e PositionEncoder) CharToByte(line string, charOff int) int {
-	if e.encoding == "utf-8" {
+func (e Encoder) CharToByte(line string, charOff int) int {
+	if e.Encoding == "utf-8" {
 		if charOff > len(line) {
 			return len(line)
 		}
@@ -29,8 +29,8 @@ func (e PositionEncoder) CharToByte(line string, charOff int) int {
 }
 
 // ByteToChar converts UTF-8 byte offset to LSP character offset in line.
-func (e PositionEncoder) ByteToChar(line string, byteOff int) int {
-	if e.encoding == "utf-8" {
+func (e Encoder) ByteToChar(line string, byteOff int) int {
+	if e.Encoding == "utf-8" {
 		if byteOff > len(line) {
 			return len(line)
 		}

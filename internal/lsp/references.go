@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
+	"github.com/gh-liu/obsidian.go/internal/lsp/position"
+	"github.com/gh-liu/obsidian.go/parse"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
 )
@@ -17,7 +19,7 @@ func ResolveReferences(ctx context.Context, idx *index.Index, root, encoding str
 	if idx == nil || params == nil {
 		return nil, nil
 	}
-	enc := PositionEncoder{encoding: encoding}
+	enc := position.Encoder{Encoding: encoding}
 
 	targetPath := referencesTargetPath(idx, root, params)
 	if targetPath == "" {
@@ -26,10 +28,9 @@ func ResolveReferences(ctx context.Context, idx *index.Index, root, encoding str
 
 	var out []protocol.Location
 	// Skip IncludeDeclaration for file-level refs: the file itself is not a "reference" to itself.
-	for _, p := range idx.ListPaths() {
-		d := idx.GetByPath(p)
+	idx.RangePaths(func(p string, d *parse.Doc) bool {
 		if d == nil {
-			continue
+			return true
 		}
 		for _, link := range d.Links {
 			if link == nil || link.Target == nil {
@@ -48,7 +49,8 @@ func ResolveReferences(ctx context.Context, idx *index.Index, root, encoding str
 			}
 			out = append(out, loc)
 		}
-	}
+		return true
+	})
 	return out, nil
 }
 

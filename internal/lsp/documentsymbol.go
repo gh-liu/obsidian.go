@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
+	"github.com/gh-liu/obsidian.go/internal/lsp/position"
 	"github.com/gh-liu/obsidian.go/parse"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
@@ -47,7 +48,7 @@ func ResolveDocumentSymbol(ctx context.Context, idx *index.Index, root, encoding
 	}
 
 	lines := strings.Split(string(content), "\n")
-	enc := PositionEncoder{encoding: encoding}
+	enc := position.Encoder{Encoding: encoding}
 
 	// Compute section end line for each heading: content until next heading of same-or-higher level.
 	sectionEndLines := make([]int, len(doc.Headings))
@@ -125,7 +126,7 @@ func nodeToSymbol(n *docSymbolNode) protocol.DocumentSymbol {
 	return s
 }
 
-func rangeToProtocolFromLines(lines []string, r parse.Range, enc PositionEncoder) protocol.Range {
+func rangeToProtocolFromLines(lines []string, r parse.Range, enc position.Encoder) protocol.Range {
 	startChar := enc.ByteToChar(lineAt(lines, r.Start.Line), r.Start.Character)
 	endChar := enc.ByteToChar(lineAt(lines, r.End.Line), r.End.Character)
 	return protocol.Range{

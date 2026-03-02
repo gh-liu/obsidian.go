@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
+	"github.com/gh-liu/obsidian.go/internal/lsp/position"
 	"github.com/gh-liu/obsidian.go/parse"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
@@ -17,7 +18,7 @@ func ResolveDefinition(ctx context.Context, idx *index.Index, root, encoding str
 	if idx == nil || params == nil {
 		return nil, nil
 	}
-	enc := PositionEncoder{encoding: encoding}
+	enc := position.Encoder{Encoding: encoding}
 
 	rel, doc, lines := sourceContext(idx, root, params)
 	if doc == nil {
@@ -96,13 +97,13 @@ func inRange(line, byteOff int, r parse.Range) bool {
 }
 
 // targetLocation builds protocol.Location for targetPath, optionally at heading anchor.
-func targetLocation(idx *index.Index, root, targetPath, anchor string, enc PositionEncoder) protocol.Location {
+func targetLocation(idx *index.Index, root, targetPath, anchor string, enc position.Encoder) protocol.Location {
 	uri := uri.File(filepath.Join(root, targetPath))
 	rng := protocol.Range{
 		Start: protocol.Position{Line: 0, Character: 0},
 		End:   protocol.Position{Line: 0, Character: 0},
 	}
-		if anchor != "" {
+	if anchor != "" {
 		doc := idx.GetByPath(targetPath)
 		if doc != nil {
 			if h := findHeading(doc, anchor); h != nil {
@@ -114,7 +115,7 @@ func targetLocation(idx *index.Index, root, targetPath, anchor string, enc Posit
 }
 
 // targetLocationBlock builds protocol.Location for targetPath at block ID.
-func targetLocationBlock(idx *index.Index, root, targetPath, blockID string, enc PositionEncoder) protocol.Location {
+func targetLocationBlock(idx *index.Index, root, targetPath, blockID string, enc position.Encoder) protocol.Location {
 	uri := uri.File(filepath.Join(root, targetPath))
 	rng := protocol.Range{
 		Start: protocol.Position{Line: 0, Character: 0},
@@ -155,7 +156,7 @@ func normalizeHeadingAnchor(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func rangeToProtocol(idx *index.Index, relPath string, r parse.Range, enc PositionEncoder) protocol.Range {
+func rangeToProtocol(idx *index.Index, relPath string, r parse.Range, enc position.Encoder) protocol.Range {
 	content, err := idx.GetContent(relPath)
 	if err != nil {
 		return protocol.Range{}

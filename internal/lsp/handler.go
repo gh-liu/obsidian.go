@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
 	"go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
@@ -27,11 +28,11 @@ type Handler struct {
 // NewHandler creates the LSP handler. Vault root is resolved from Initialize params.
 func NewHandler(ctx context.Context, conn jsonrpc2.Conn, server protocol.Server, logger *slog.Logger) (*Handler, context.Context, error) {
 	h := &Handler{
-		Server: server,
-		conn:   conn,
-		log:    logger,
+		Server:   server,
+		conn:     conn,
+		log:      logger,
 		settings: &Settings{},
-		index:  nil, // set after Initialize
+		index:    nil, // set after Initialize
 	}
 	return h, ctx, nil
 }
@@ -89,7 +90,7 @@ func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionPar
 	if h.index == nil {
 		return nil, nil
 	}
-	return ResolveCompletion(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+	return completion.ResolveCompletion(ctx, h.index, h.index.Root(), h.positionEncoding, params)
 }
 
 // DocumentSymbol returns the document outline (TOC) as a tree of headings.
