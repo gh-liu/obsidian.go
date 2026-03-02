@@ -16,10 +16,11 @@ import (
 const (
 	cmdNew             = "obsidian.new"
 	cmdNewFromTemplate = "obsidian.newFromTemplate"
+	cmdInsertTemplate  = "obsidian.insertTemplate"
 )
 
-// ExecuteCommand handles workspace/executeCommand for obsidian.new and obsidian.newFromTemplate.
-func (h *Handler) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
+// ExecuteCommand handles workspace/executeCommand for obsidian.new, obsidian.newFromTemplate, obsidian.insertTemplate.
+func (h *Handler) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
 	if h.index == nil {
 		return nil, fmt.Errorf("no vault: open a workspace first")
 	}
@@ -31,12 +32,14 @@ func (h *Handler) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCo
 		return h.executeNew(ctx, root, templateDir, params.Arguments)
 	case cmdNewFromTemplate:
 		return h.executeNewFromTemplate(ctx, root, templateDir, params.Arguments)
+	case cmdInsertTemplate:
+		return h.executeInsertTemplate(ctx, templateDir, params.Arguments)
 	default:
 		return nil, fmt.Errorf("unknown command: %s", params.Command)
 	}
 }
 
-func (h *Handler) executeNew(ctx context.Context, root, templateDir string, args []interface{}) (interface{}, error) {
+func (h *Handler) executeNew(ctx context.Context, root, templateDir string, args []any) (any, error) {
 	targetPath := extractString(args, 0)
 	if targetPath == "" {
 		targetPath = fmt.Sprintf("Untitled %s.md", time.Now().Format("2006-01-02 15-04-05"))
@@ -45,7 +48,7 @@ func (h *Handler) executeNew(ctx context.Context, root, templateDir string, args
 	return h.createNoteFromTemplate(ctx, root, templateDir, "default", targetPath)
 }
 
-func (h *Handler) executeNewFromTemplate(ctx context.Context, root, templateDir string, args []interface{}) (interface{}, error) {
+func (h *Handler) executeNewFromTemplate(ctx context.Context, root, templateDir string, args []any) (any, error) {
 	templateName := extractString(args, 0)
 	if templateName == "" {
 		return nil, fmt.Errorf("obsidian.newFromTemplate requires template name as first argument")
@@ -58,7 +61,7 @@ func (h *Handler) executeNewFromTemplate(ctx context.Context, root, templateDir 
 	return h.createNoteFromTemplate(ctx, root, templateDir, templateName, targetPath)
 }
 
-func (h *Handler) createNoteFromTemplate(ctx context.Context, root, templateDir, templateName, targetPath string) (interface{}, error) {
+func (h *Handler) createNoteFromTemplate(ctx context.Context, root, templateDir, templateName, targetPath string) (any, error) {
 	if h.settings.ShouldIgnore(targetPath) {
 		return nil, fmt.Errorf("path is ignored: %s", targetPath)
 	}
@@ -89,10 +92,87 @@ func (h *Handler) createNoteFromTemplate(ctx context.Context, root, templateDir,
 
 	fileURI := string(uri.File(fullPath))
 	h.log.Info("created note", "path", targetPath, "template", templateName)
-	return map[string]interface{}{"uri": fileURI}, nil
+	return map[string]any{"uri": fileURI}, nil
 }
 
-func extractString(args []interface{}, i int) string {
+func (h *Handler) executeInsertTemplate(ctx context.Context, templateDir string, args []any) (any, error) {
+	templateName := extractString(args, 0)
+	if templateName == "" {
+		return nil, fmt.Errorf("obsidian.insertTemplate requires template name as first argument")
+	}
+	docURI := extractString(args, 1)
+	if docURI == "" {
+		return nil, fmt.Errorf("obsidian.insertTemplate requires document URI as second argument")
+	}
+	pos := extractPosition(args, 2)
+	if pos == nil {
+		return nil, fmt.Errorf("obsidian.insertTemplate requires position {line, character} as third argument")
+	}
+
+	tmpl, err := template.Load(templateDir, templateName)
+	if err != nil {
+		return nil, fmt.Errorf("load template %s: %w", templateName, err)
+	}
+
+	// Title from document path (filename without .md)
+	fullPath := uri.URI(docURI).Filename()
+	title := strings.TrimSuffix(filepath.Base(fullPath), ".md")
+	if title == "" {
+		title = "Untitled"
+	}
+	vars := template.NewVars(title)
+	rendered := tmpl.Execute(vars)
+
+	edit := protocol.WorkspaceEdit{
+		Changes: map[protocol.DocumentURI][]protocol.TextEdit{
+			protocol.DocumentURI(docURI): {{
+				Range: protocol.Range{
+					Start: *pos,
+					End:   *pos,
+				},
+				NewText: rendered,
+			}},
+		},
+	}
+	applyParams := &protocol.ApplyWorkspaceEditParams{
+		Edit: edit,
+	}
+	var result protocol.ApplyWorkspaceEditResponse
+	if _, err := h.conn.Call(ctx, protocol.MethodWorkspaceApplyEdit, applyParams, &result); err != nil {
+		return nil, fmt.Errorf("apply edit: %w", err)
+	}
+	if !result.Applied && result.FailureReason != "" {
+		return nil, fmt.Errorf("edit not applied: %s", result.FailureReason)
+	}
+	h.log.Info("inserted template", "template", templateName, "uri", docURI)
+	return map[string]any{"applied": result.Applied}, nil
+}
+
+func extractPosition(args []any, i int) *protocol.Position {
+	if i >= len(args) {
+		return nil
+	}
+	m, ok := args[i].(map[string]any)
+	if !ok {
+		return nil
+	}
+	line, _ := toUint32(m["line"])
+	char, _ := toUint32(m["character"])
+	return &protocol.Position{Line: line, Character: char}
+}
+
+func toUint32(v any) (uint32, bool) {
+	switch x := v.(type) {
+	case float64:
+		return uint32(x), true
+	case int:
+		return uint32(x), true
+	default:
+		return 0, false
+	}
+}
+
+func extractString(args []any, i int) string {
 	if i >= len(args) {
 		return ""
 	}
