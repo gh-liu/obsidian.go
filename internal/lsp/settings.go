@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"path/filepath"
 	"regexp"
 	"sync"
 )
@@ -9,6 +10,28 @@ import (
 type Settings struct {
 	mu             sync.RWMutex
 	ignorePatterns []*regexp.Regexp
+	templatePath   string // relative to vault root, default ".templates"
+}
+
+// SetTemplatePath sets the template directory path (relative to vault root).
+func (s *Settings) SetTemplatePath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if path == "" {
+		s.templatePath = ".templates"
+		return
+	}
+	s.templatePath = filepath.Clean(path)
+}
+
+// TemplatePath returns the template directory path.
+func (s *Settings) TemplatePath() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.templatePath == "" {
+		return ".templates"
+	}
+	return s.templatePath
 }
 
 // SetIgnorePatterns sets ignore regex patterns. Invalid patterns are skipped.

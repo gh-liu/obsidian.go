@@ -54,6 +54,9 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 			DefinitionProvider:     true,
 			ReferencesProvider:     true,
 			DocumentSymbolProvider: true,
+			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
+				Commands: []string{cmdNew, cmdNewFromTemplate},
+			},
 		},
 		ServerInfo: &protocol.ServerInfo{
 			Name:    "obsidian-lsp",
@@ -260,31 +263,35 @@ func (h *Handler) registerFileWatchers(ctx context.Context) {
 	}
 }
 
-// applySettings extracts ignore patterns from LSP workspace settings.
-// Supports: { "obsidian": { "ignores": [...] } } (didChangeConfiguration) or { "ignores": [...] } (workspace/configuration result).
+// applySettings extracts settings from LSP workspace configuration.
+// Supports: { "ignores": [...], "templatePath": "..." } (workspace/configuration result)
+// or { "obsidian": { "ignores": [...], "templatePath": "..." } } (didChangeConfiguration).
 func (h *Handler) applySettings(settings interface{}) {
-	if settings == nil {
+	section := extractObsidianSection(settings)
+	if section == nil {
 		return
+	}
+	if v, ok := section["ignores"].([]interface{}); ok {
+		h.settings.SetIgnorePatterns(toStrings(v))
+	}
+	if s, ok := section["templatePath"].(string); ok {
+		h.settings.SetTemplatePath(s)
+	}
+}
+
+func extractObsidianSection(settings interface{}) map[string]interface{} {
+	if settings == nil {
+		return nil
 	}
 	m, ok := settings.(map[string]interface{})
 	if !ok {
-		return
+		return nil
 	}
-	// workspace/configuration returns section content directly: { "ignores": [...] }
-	if v, ok := m["ignores"].([]interface{}); ok {
-		h.settings.SetIgnorePatterns(toStrings(v))
-		return
+	// workspace/configuration returns section content directly
+	if section, ok := m["obsidian"].(map[string]interface{}); ok {
+		return section
 	}
-	// didChangeConfiguration: { "obsidian": { "ignores": [...] } }
-	section, ok := m["obsidian"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	v, ok := section["ignores"].([]interface{})
-	if !ok {
-		return
-	}
-	h.settings.SetIgnorePatterns(toStrings(v))
+	return m
 }
 
 func toStrings(v []interface{}) []string {
