@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
+	"github.com/gh-liu/obsidian.go/internal/lsp/format"
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
+	"github.com/gh-liu/obsidian.go/internal/lsp/position"
 	"go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
@@ -52,9 +54,10 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 	h.positionEncoding = extractPositionEncoding(params)
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
-			DefinitionProvider:     true,
-			ReferencesProvider:     true,
-			DocumentSymbolProvider: true,
+			DefinitionProvider:         true,
+			ReferencesProvider:         true,
+			DocumentSymbolProvider:     true,
+			DocumentFormattingProvider: true,
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"[", "#"},
 			},
@@ -91,6 +94,34 @@ func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionPar
 		return nil, nil
 	}
 	return completion.ResolveCompletion(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+}
+
+// Formatting handles textDocument/formatting. Runs format ops in sequence and assembles TextEdits.
+func (h *Handler) Formatting(ctx context.Context, params *protocol.DocumentFormattingParams) ([]protocol.TextEdit, error) {
+	if h.index == nil || params == nil {
+		return nil, nil
+	}
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" || !strings.HasSuffix(strings.ToLower(rel), ".md") {
+		return nil, nil
+	}
+	if h.settings.ShouldIgnore(rel) {
+		return nil, nil
+	}
+	content, err := h.index.GetContent(rel)
+	if err != nil {
+		return nil, nil
+	}
+	fctx := format.FormatContext{
+		Path:  rel,
+		Title: strings.TrimSuffix(filepath.Base(rel), ".md"),
+		Enc:   position.Encoder{Encoding: h.positionEncoding},
+	}
+	edits := format.Run(content, fctx, format.DefaultOps)
+	if len(edits) == 0 {
+		return nil, nil
+	}
+	return edits, nil
 }
 
 // DocumentSymbol returns the document outline (TOC) as a tree of headings.
