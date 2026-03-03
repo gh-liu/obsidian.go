@@ -23,6 +23,62 @@ func TestBuiltinDefault(t *testing.T) {
 	}
 }
 
+func TestListNames(t *testing.T) {
+	dir := t.TempDir()
+	t.Run("dir_not_exist", func(t *testing.T) {
+		names, err := ListNames(filepath.Join(dir, "nonexistent"))
+		if err != nil {
+			t.Fatalf("ListNames: %v", err)
+		}
+		if names != nil {
+			t.Errorf("expected nil for nonexistent dir, got %v", names)
+		}
+	})
+	t.Run("empty_dir", func(t *testing.T) {
+		sub := filepath.Join(dir, "empty")
+		if err := os.Mkdir(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		names, err := ListNames(sub)
+		if err != nil {
+			t.Fatalf("ListNames: %v", err)
+		}
+		if names != nil {
+			t.Errorf("expected nil for empty dir, got %v", names)
+		}
+	})
+	t.Run("lists_md_files", func(t *testing.T) {
+		for _, f := range []string{"daily.md", "weekly.md", "note.MD"} {
+			if err := os.WriteFile(filepath.Join(dir, f), []byte("# x"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		names, err := ListNames(dir)
+		if err != nil {
+			t.Fatalf("ListNames: %v", err)
+		}
+		want := []string{"daily", "weekly", "note"}
+		if len(names) != len(want) {
+			t.Errorf("got %v, want %v", names, want)
+		}
+		for _, n := range want {
+			var found bool
+			for _, got := range names {
+				if got == n {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("missing %q in %v", n, names)
+			}
+		}
+	})
+}
+
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	t.Run("default_not_found", func(t *testing.T) {

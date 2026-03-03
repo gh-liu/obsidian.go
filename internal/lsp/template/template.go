@@ -23,6 +23,30 @@ type Template struct {
 	Content string
 }
 
+// ListNames returns template names (basenames without .md) in templateDir.
+// Returns nil slice if dir does not exist or is empty.
+func ListNames(templateDir string) ([]string, error) {
+	entries, err := os.ReadDir(templateDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		base := e.Name()
+		lower := strings.ToLower(base)
+		if strings.HasSuffix(lower, ".md") {
+			names = append(names, base[:len(base)-3])
+		}
+	}
+	return names, nil
+}
+
 // Load load template from templateDir/name.md.
 func Load(templateDir, name string) (*Template, error) {
 	if name == "" {

@@ -62,7 +62,7 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 				TriggerCharacters: []string{"[", "#"},
 			},
 			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
-				Commands: []string{cmdNew, cmdNewFromTemplate, cmdInsertTemplate},
+				Commands: []string{cmdNew, cmdNewFromTemplate, cmdInsertTemplate, cmdListTemplates},
 			},
 		},
 		ServerInfo: &protocol.ServerInfo{

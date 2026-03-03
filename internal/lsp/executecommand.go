@@ -17,6 +17,7 @@ const (
 	cmdNew             = "obsidian.new"
 	cmdNewFromTemplate = "obsidian.newFromTemplate"
 	cmdInsertTemplate  = "obsidian.insertTemplate"
+	cmdListTemplates   = "obsidian.listTemplates"
 )
 
 // ExecuteCommand handles workspace/executeCommand for obsidian.new, obsidian.newFromTemplate, obsidian.insertTemplate.
@@ -34,6 +35,8 @@ func (h *Handler) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCo
 		return h.executeNewFromTemplate(ctx, root, templateDir, params.Arguments)
 	case cmdInsertTemplate:
 		return h.executeInsertTemplate(ctx, templateDir, params.Arguments)
+	case cmdListTemplates:
+		return h.executeListTemplates(templateDir)
 	default:
 		return nil, fmt.Errorf("unknown command: %s", params.Command)
 	}
@@ -145,6 +148,17 @@ func (h *Handler) executeInsertTemplate(ctx context.Context, templateDir string,
 	h.log.Info("inserted template", "template", templateName, "uri", docURI)
 
 	return map[string]any{"applied": result.Applied}, nil
+}
+
+func (h *Handler) executeListTemplates(templateDir string) (any, error) {
+	names, err := template.ListNames(templateDir)
+	if err != nil {
+		return nil, fmt.Errorf("list templates: %w", err)
+	}
+	if names == nil {
+		names = []string{}
+	}
+	return map[string]any{"templates": names}, nil
 }
 
 func extractPosition(args []any, i int) *protocol.Position {

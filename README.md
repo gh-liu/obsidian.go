@@ -4,14 +4,14 @@ LSP server for Obsidian vaults. Provides go-to-definition, completion, outline, 
 
 ## Features
 
-| Capability           | Description                                                           |
-|----------------------|-----------------------------------------------------------------------|
-| **Go to Definition** | Jump from `[[file]]`, `[[#heading]]`, `[[path#heading]]` to target    |
-| **Find References**  | Find all references to a note                                         |
-| **Completion**       | Trigger on `[` or `#` for wiki link / heading completion              |
-| **Document Symbol**  | Document outline (heading tree)                                       |
-| **Format**           | Format frontmatter (id, title, createdAt, updatedAt)                  |
-| **Execute Command**  | `obsidian.new`, `obsidian.newFromTemplate`, `obsidian.insertTemplate` |
+| Capability           | Description                                                                                     |
+|----------------------|-------------------------------------------------------------------------------------------------|
+| **Go to Definition** | Jump from `[[file]]`, `[[#heading]]`, `[[path#heading]]` to target                              |
+| **Find References**  | Find all references to a note                                                                   |
+| **Completion**       | Trigger on `[` or `#` for wiki link / heading completion                                        |
+| **Document Symbol**  | Document outline (heading tree)                                                                 |
+| **Format**           | Format frontmatter (id, title, createdAt, updatedAt)                                            |
+| **Execute Command**  | `obsidian.new`, `obsidian.newFromTemplate`, `obsidian.insertTemplate`, `obsidian.listTemplates` |
 
 ## Installation
 
@@ -54,3 +54,12 @@ vim.lsp.config("obsidian_ls", {
 |-------------------------|---------------------------------------------|
 | `obsidian.ignores`      | Array of regex patterns for paths to ignore |
 | `obsidian.templatePath` | Template directory, default `.templates`    |
+
+## Execute Commands
+
+| Command                    | Description                                                       |
+|----------------------------|-------------------------------------------------------------------|
+| `obsidian.new`             | Create note from default template                                 |
+| `obsidian.newFromTemplate` | Create note from named template                                   |
+| `obsidian.insertTemplate`  | Insert template at cursor                                         |
+| `obsidian.listTemplates`   | Return `{templates: string[]}` for autocomplete in template picker |
