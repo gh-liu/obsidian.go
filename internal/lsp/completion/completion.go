@@ -13,6 +13,7 @@ type wikiLinkContext struct {
 	startLine, startChar int
 	prefix               string
 	completeFiles        bool
+	completeBlocks       bool
 	targetPath           string
 }
 
@@ -21,11 +22,12 @@ func toWikiLinkContext(lineIdx int, ctx *parse.WikiLinkCursorContext) *wikiLinkC
 		return nil
 	}
 	return &wikiLinkContext{
-		startLine:     lineIdx,
-		startChar:     ctx.StartByte,
-		prefix:        ctx.Prefix,
-		completeFiles: ctx.CompleteFiles,
-		targetPath:    ctx.TargetPath,
+		startLine:      lineIdx,
+		startChar:      ctx.StartByte,
+		prefix:         ctx.Prefix,
+		completeFiles:  ctx.CompleteFiles,
+		completeBlocks: ctx.CompleteBlock,
+		targetPath:     ctx.TargetPath,
 	}
 }
 
@@ -49,6 +51,8 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, root, encoding str
 	var items []protocol.CompletionItem
 	if linkCtx.completeFiles {
 		items = completeFiles(idx, linkCtx, reqCtx)
+	} else if linkCtx.completeBlocks {
+		items = completeBlocks(idx, reqCtx.currentRel, linkCtx, reqCtx)
 	} else {
 		items = completeHeadings(idx, reqCtx.currentRel, linkCtx, reqCtx)
 	}

@@ -249,6 +249,9 @@ id: note-a
 	if aItem.InsertText != "note-a" {
 		t.Errorf("want InsertText=note-a (id), got %q", aItem.InsertText)
 	}
+	if aItem.TextEdit == nil || aItem.TextEdit.NewText != "note-a" {
+		t.Errorf("want TextEdit.NewText=note-a, got %+v", aItem.TextEdit)
+	}
 	var bItem *protocol.CompletionItem
 	for i := range list.Items {
 		if list.Items[i].Label == "b" {
@@ -258,6 +261,71 @@ id: note-a
 	}
 	if bItem != nil && bItem.InsertText != "b" {
 		t.Errorf("want InsertText=b (path), got %q", bItem.InsertText)
+	}
+}
+
+func TestResolveCompletion_CurrentFileBlocks(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "note.md", "line one ^alpha\nline two ^beta\n[[#^")
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	_ = idx.SetContent("note.md", []byte("line one ^alpha\nline two ^beta\n[[#^"))
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 2, Character: 4},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("expected non-nil CompletionList")
+	}
+	labels := make(map[string]bool)
+	for _, item := range list.Items {
+		labels[item.Label] = true
+	}
+	for _, want := range []string{"alpha", "beta"} {
+		if !labels[want] {
+			t.Errorf("missing block completion %q, got %v", want, collectLabels(list))
+		}
+	}
+}
+
+func TestResolveCompletion_TargetFileBlocksByID(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "target.md", "---\nid: target-id\n---\nline one ^alpha\nline two ^beta")
+	writeRefFile(t, dir, "note.md", "See [[target-id#^")
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	_ = idx.SetContent("note.md", []byte("See [[target-id#^"))
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 0, Character: 17},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("expected block completions for [[target-id#^")
+	}
+	labels := make(map[string]bool)
+	for _, item := range list.Items {
+		labels[item.Label] = true
+	}
+	for _, want := range []string{"alpha", "beta"} {
+		if !labels[want] {
+			t.Errorf("missing block %q, got %v", want, collectLabels(list))
+		}
 	}
 }
 

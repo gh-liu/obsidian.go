@@ -8,6 +8,7 @@ type WikiLinkCursorContext struct {
 	StartByte     int
 	Prefix        string
 	CompleteFiles bool
+	CompleteBlock bool
 	TargetPath    string
 }
 
@@ -37,7 +38,19 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 	}
 
 	inner := beforeCursor[open:byteOff]
+	if strings.Contains(inner, "|") {
+		return nil
+	}
 	if after, ok := strings.CutPrefix(inner, "#"); ok {
+		if blockPrefix, ok := strings.CutPrefix(after, "^"); ok {
+			return &WikiLinkCursorContext{
+				StartByte:     open + 2,
+				Prefix:        blockPrefix,
+				CompleteFiles: false,
+				CompleteBlock: true,
+				TargetPath:    "",
+			}
+		}
 		prefix := after
 		lastHash := strings.LastIndex(prefix, "#")
 		if lastHash >= 0 {
@@ -47,6 +60,7 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 				StartByte:     headingStartByte,
 				Prefix:        prefix,
 				CompleteFiles: false,
+				CompleteBlock: false,
 				TargetPath:    "",
 			}
 		}
@@ -54,16 +68,25 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 			StartByte:     open + 1,
 			Prefix:        prefix,
 			CompleteFiles: false,
+			CompleteBlock: false,
 			TargetPath:    "",
 		}
 	}
 	if idx := strings.LastIndex(inner, "#"); idx >= 0 {
 		targetPath := strings.TrimSpace(inner[:idx])
 		prefix := inner[idx+1:]
+		startByte := open + idx + 1
+		completeBlock := false
+		if blockPrefix, ok := strings.CutPrefix(prefix, "^"); ok {
+			completeBlock = true
+			prefix = blockPrefix
+			startByte++
+		}
 		return &WikiLinkCursorContext{
-			StartByte:     open + idx + 1,
+			StartByte:     startByte,
 			Prefix:        prefix,
 			CompleteFiles: false,
+			CompleteBlock: completeBlock,
 			TargetPath:    targetPath,
 		}
 	}
@@ -71,6 +94,7 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 		StartByte:     open,
 		Prefix:        inner,
 		CompleteFiles: true,
+		CompleteBlock: false,
 		TargetPath:    "",
 	}
 }

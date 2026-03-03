@@ -27,6 +27,13 @@ func headingMatchScore(prefixLower, heading string) int {
 	return hasPrefixOrContains(prefixLower, heading)
 }
 
+func blockMatchScore(prefixLower, blockID string) int {
+	if prefixLower == "" {
+		return 1
+	}
+	return hasPrefixOrContains(prefixLower, blockID)
+}
+
 func hasPrefixOrContains(prefixLower, candidate string) int {
 	candidateLower := strings.ToLower(candidate)
 	if strings.HasPrefix(candidateLower, prefixLower) {
