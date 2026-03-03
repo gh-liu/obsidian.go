@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
 	"github.com/gh-liu/obsidian.go/internal/lsp/position"
@@ -136,7 +137,15 @@ func targetLocationBlock(idx *index.Index, root, targetPath, blockID string, enc
 func findHeading(doc *parse.Doc, anchor string) *parse.Heading {
 	norm := normalizeHeadingAnchor(anchor)
 	for _, h := range doc.Headings {
-		if h != nil && (strings.EqualFold(anchor, h.Text) || normalizeHeadingAnchor(h.Text) == norm) {
+		if h == nil {
+			continue
+		}
+		if strings.EqualFold(anchor, h.Text) {
+			return h
+		}
+		// Normalized match only when norm is non-empty; otherwise all-CJK headings
+		// would normalize to "" and incorrectly match the first heading.
+		if norm != "" && normalizeHeadingAnchor(h.Text) == norm {
 			return h
 		}
 	}
@@ -150,6 +159,8 @@ func normalizeHeadingAnchor(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else if unicode.IsLetter(r) {
 			b.WriteRune(r)
 		}
 	}
