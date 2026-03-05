@@ -89,9 +89,9 @@ updatedAt: 2026-02-28 18:38:25
 			want: &Doc{
 				Path: "links.md",
 				Links: []*Link{
-					{Kind: LinkWiki, Target: &Doc{ID: "note"}, Range: Range{Start: Pos{0, 4}, End: Pos{0, 12}}},
-					{Kind: LinkWiki, Target: &Doc{ID: "other"}, Alias: "alias", Range: Range{Start: Pos{0, 17}, End: Pos{0, 32}}},
-					{Kind: LinkWiki, Target: &Doc{ID: "file"}, Anchor: &Heading{Text: "heading"}, Range: Range{Start: Pos{0, 37}, End: Pos{0, 53}}},
+					{Kind: LinkWiki, Target: "note", Range: Range{Start: Pos{0, 4}, End: Pos{0, 12}}},
+					{Kind: LinkWiki, Target: "other", Alias: "alias", Range: Range{Start: Pos{0, 17}, End: Pos{0, 32}}},
+					{Kind: LinkWiki, Target: "file", Anchor: "heading", Range: Range{Start: Pos{0, 37}, End: Pos{0, 53}}},
 				},
 			},
 		},
@@ -102,7 +102,7 @@ updatedAt: 2026-02-28 18:38:25
 			want: &Doc{
 				Path: "same.md",
 				Links: []*Link{
-					{Kind: LinkWiki, Target: nil, Anchor: &Heading{Text: "Section title"}, Range: Range{Start: Pos{0, 8}, End: Pos{0, 26}}},
+					{Kind: LinkWiki, Target: "", Anchor: "Section title", Range: Range{Start: Pos{0, 8}, End: Pos{0, 26}}},
 				},
 			},
 		},
@@ -113,7 +113,7 @@ updatedAt: 2026-02-28 18:38:25
 			want: &Doc{
 				Path: "nested.md",
 				Links: []*Link{
-					{Kind: LinkWiki, Target: &Doc{ID: "file"}, Anchor: &Heading{Text: "Heading 1#Subheading"}, Range: Range{Start: Pos{0, 0}, End: Pos{0, 29}}},
+					{Kind: LinkWiki, Target: "file", Anchor: "Heading 1#Subheading", Range: Range{Start: Pos{0, 0}, End: Pos{0, 29}}},
 				},
 			},
 		},
@@ -124,7 +124,7 @@ updatedAt: 2026-02-28 18:38:25
 			want: &Doc{
 				Path: "md.md",
 				Links: []*Link{
-					{Kind: LinkMarkdown, Target: &Doc{ID: "path/to/file.md"}, Alias: "text", Range: Range{Start: Pos{0, 0}, End: Pos{0, 23}}},
+					{Kind: LinkMarkdown, Target: "path/to/file.md", Alias: "text", Range: Range{Start: Pos{0, 0}, End: Pos{0, 23}}},
 				},
 			},
 		},
@@ -160,7 +160,7 @@ Another line ^block_99`,
 			want: &Doc{
 				Path: "block.md",
 				Links: []*Link{
-					{Kind: LinkWiki, Target: &Doc{ID: "file"}, Block: &Block{ID: "block-id"}, Range: Range{Start: Pos{0, 0}, End: Pos{0, 18}}},
+					{Kind: LinkWiki, Target: "file", BlockRef: "block-id", Range: Range{Start: Pos{0, 0}, End: Pos{0, 18}}},
 				},
 			},
 		},
@@ -171,7 +171,7 @@ Another line ^block_99`,
 			want: &Doc{
 				Path: "same-block.md",
 				Links: []*Link{
-					{Kind: LinkWiki, Target: nil, Block: &Block{ID: "my-block"}, Range: Range{Start: Pos{0, 4}, End: Pos{0, 18}}},
+					{Kind: LinkWiki, Target: "", BlockRef: "my-block", Range: Range{Start: Pos{0, 4}, End: Pos{0, 18}}},
 				},
 			},
 		},
@@ -182,7 +182,7 @@ Another line ^block_99`,
 			want: &Doc{
 				Path: "block-alias.md",
 				Links: []*Link{
-					{Kind: LinkWiki, Target: &Doc{ID: "note"}, Block: &Block{ID: "block-id"}, Alias: "click here", Range: Range{Start: Pos{0, 0}, End: Pos{0, 29}}},
+					{Kind: LinkWiki, Target: "note", BlockRef: "block-id", Alias: "click here", Range: Range{Start: Pos{0, 0}, End: Pos{0, 29}}},
 				},
 			},
 		},
@@ -208,7 +208,7 @@ See [[other]] and #inline-tag
 					{Level: 2, Text: "Section", Range: Range{Start: Pos{7, 0}, End: Pos{7, 10}}},
 				},
 				Links: []*Link{
-					{Kind: LinkWiki, Target: &Doc{ID: "other"}, Range: Range{Start: Pos{6, 4}, End: Pos{6, 13}}},
+					{Kind: LinkWiki, Target: "other", Range: Range{Start: Pos{6, 4}, End: Pos{6, 13}}},
 				},
 			},
 		},

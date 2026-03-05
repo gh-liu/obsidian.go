@@ -34,7 +34,7 @@ See [[#迭代、递归]] for details.
 			Position:     protocol.Position{Line: 6, Character: 8},
 		},
 	}
-	locs, err := ResolveDefinition(context.Background(), idx, dir, "utf-8", params)
+	locs, err := ResolveDefinition(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveDefinition: %v", err)
 	}

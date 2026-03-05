@@ -56,12 +56,11 @@ func splitFrontmatter(content []byte) (frontmatter, body []byte) {
 	if !strings.HasPrefix(s, "---\n") {
 		return nil, content
 	}
-	idx := strings.Index(s[4:], "\n---")
-	if idx < 0 {
+	before, after, ok := strings.Cut(s[4:], "\n---")
+	if !ok {
 		return nil, content
 	}
-	end := 4 + idx + 4 // after second ---
-	return []byte(s[4 : 4+idx]), []byte(s[end:])
+	return []byte(before), []byte(after)
 }
 
 func parseFrontmatter(raw []byte, doc *Doc) {

@@ -34,7 +34,7 @@ See [[a]] and [[a.md]].
 		},
 		Context: protocol.ReferenceContext{IncludeDeclaration: false},
 	}
-	locs, err := ResolveReferences(context.Background(), idx, dir, "utf-8", params)
+	locs, err := ResolveReferences(context.Background(), idx, "a.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveReferences: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestResolveReferences_ToCurrentFile(t *testing.T) {
 		},
 		Context: protocol.ReferenceContext{IncludeDeclaration: false},
 	}
-	locs, err := ResolveReferences(context.Background(), idx, dir, "utf-8", params)
+	locs, err := ResolveReferences(context.Background(), idx, "target.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveReferences: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestResolveReferences_NoSelfDeclaration(t *testing.T) {
 		},
 		Context: protocol.ReferenceContext{IncludeDeclaration: true},
 	}
-	locs, err := ResolveReferences(context.Background(), idx, dir, "utf-8", params)
+	locs, err := ResolveReferences(context.Background(), idx, "a.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveReferences: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestResolveReferences_NoSelfDeclaration(t *testing.T) {
 	}
 }
 
-func TestResolveReferences_ExcludeHeadingLinks(t *testing.T) {
+func TestResolveReferences_IncludeHeadingLinks(t *testing.T) {
 	dir := t.TempDir()
 	writeRefFile(t, dir, "a.md", `# A
 ## Section
@@ -119,13 +119,13 @@ func TestResolveReferences_ExcludeHeadingLinks(t *testing.T) {
 		},
 		Context: protocol.ReferenceContext{IncludeDeclaration: false},
 	}
-	locs, err := ResolveReferences(context.Background(), idx, dir, "utf-8", params)
+	locs, err := ResolveReferences(context.Background(), idx, "a.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveReferences: %v", err)
 	}
-	// Only [[a]] counts, not [[a#Section]]
-	if len(locs) != 1 {
-		t.Errorf("want 1 ref ([[a]] only, exclude [[a#Section]]), got %d", len(locs))
+	// Both [[a]] and [[a#Section]] count as references to a.md.
+	if len(locs) != 2 {
+		t.Errorf("want 2 refs ([[a]] and [[a#Section]]), got %d", len(locs))
 	}
 }
 
@@ -146,7 +146,7 @@ func TestResolveReferences_FileNotInIndex(t *testing.T) {
 		},
 		Context: protocol.ReferenceContext{IncludeDeclaration: false},
 	}
-	locs, err := ResolveReferences(context.Background(), idx, dir, "utf-8", params)
+	locs, err := ResolveReferences(context.Background(), idx, "ignored/x.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveReferences: %v", err)
 	}

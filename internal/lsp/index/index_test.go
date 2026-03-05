@@ -128,6 +128,31 @@ func TestIndex_IndexAll_ignore(t *testing.T) {
 	}
 }
 
+func TestResolveLinkTargetToPath_BasenameIndex(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "z/target.md", "# nested")
+	writeFile(t, dir, "target.md", "# root")
+	writeFile(t, dir, "x/another.md", "# another")
+
+	idx := New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	if got := idx.ResolveLinkTargetToPath("target"); got != "target.md" {
+		t.Fatalf("ResolveLinkTargetToPath(target): want target.md, got %q", got)
+	}
+	if got := idx.ResolveLinkTargetToPath("target.md"); got != "target.md" {
+		t.Fatalf("ResolveLinkTargetToPath(target.md): want target.md, got %q", got)
+	}
+
+	// Remove shortest candidate, then basename fallback should pick the remaining one.
+	idx.Remove("target.md")
+	if got := idx.ResolveLinkTargetToPath("target"); got != "z/target.md" {
+		t.Fatalf("ResolveLinkTargetToPath(target) after remove: want z/target.md, got %q", got)
+	}
+}
+
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	p := path.Join(dir, name)

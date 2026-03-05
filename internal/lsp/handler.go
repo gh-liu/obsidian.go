@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
@@ -77,7 +78,11 @@ func (h *Handler) Definition(ctx context.Context, params *protocol.DefinitionPar
 	if h.index == nil {
 		return nil, nil
 	}
-	return ResolveDefinition(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	return ResolveDefinition(ctx, h.index, rel, h.positionEncoding, params)
 }
 
 // References returns all links pointing to the target file. Delegates to ResolveReferences.
@@ -85,7 +90,11 @@ func (h *Handler) References(ctx context.Context, params *protocol.ReferencePara
 	if h.index == nil {
 		return nil, nil
 	}
-	return ResolveReferences(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	return ResolveReferences(ctx, h.index, rel, h.positionEncoding, params)
 }
 
 // Completion returns completion items for wiki links ([[file]], [[#heading]], [[path#heading]]).
@@ -93,7 +102,11 @@ func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionPar
 	if h.index == nil {
 		return nil, nil
 	}
-	return completion.ResolveCompletion(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	return completion.ResolveCompletion(ctx, h.index, rel, h.positionEncoding, params)
 }
 
 // Formatting handles textDocument/formatting. Runs format ops in sequence and assembles TextEdits.
@@ -129,7 +142,11 @@ func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentS
 	if h.index == nil {
 		return nil, nil
 	}
-	symbols, err := ResolveDocumentSymbol(ctx, h.index, h.index.Root(), h.positionEncoding, params)
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	symbols, err := ResolveDocumentSymbol(ctx, h.index, rel, h.positionEncoding, params)
 	if err != nil {
 		return nil, err
 	}
@@ -166,10 +183,8 @@ func extractPositionEncoding(params *protocol.InitializeParams) string {
 	if err := json.Unmarshal(data, &caps); err != nil {
 		return "utf-16"
 	}
-	for _, enc := range caps.General.PositionEncodings {
-		if enc == "utf-8" {
-			return "utf-8"
-		}
+	if slices.Contains(caps.General.PositionEncodings, "utf-8") {
+		return "utf-8"
 	}
 	return "utf-16"
 }
@@ -221,7 +236,7 @@ func (h *Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextD
 		// Document not in index (e.g. DidOpen not sent); cannot apply incremental
 		return nil
 	}
-	newContent := applyContentChanges(content, params.ContentChanges)
+	newContent := applyContentChanges(content, params.ContentChanges, position.Encoder{Encoding: h.positionEncoding})
 	if err := h.index.SetContent(rel, []byte(newContent)); err != nil {
 		h.log.Debug("index set content failed", "path", rel, "err", err)
 	}
@@ -427,7 +442,7 @@ func uriToRelPath(docURI protocol.DocumentURI, root string) string {
 }
 
 // applyContentChanges applies LSP content changes to document. Full sync if any change has no Range.
-func applyContentChanges(content string, changes []protocol.TextDocumentContentChangeEvent) string {
+func applyContentChanges(content string, changes []protocol.TextDocumentContentChangeEvent, enc position.Encoder) string {
 	for _, c := range changes {
 		if c.Range.Start.Line == 0 && c.Range.Start.Character == 0 && c.Range.End.Line == 0 && c.Range.End.Character == 0 {
 			content = c.Text
@@ -449,9 +464,11 @@ func applyContentChanges(content string, changes []protocol.TextDocumentContentC
 		if startLine > 0 {
 			before += "\n"
 		}
-		before += lines[startLine][:min(startChar, len(lines[startLine]))]
+		startByte := enc.CharToByte(lines[startLine], startChar)
+		before += lines[startLine][:min(startByte, len(lines[startLine]))]
 		if endLine < len(lines) {
-			after = lines[endLine][min(endChar, len(lines[endLine])):]
+			endByte := enc.CharToByte(lines[endLine], endChar)
+			after = lines[endLine][min(endByte, len(lines[endLine])):]
 			if endLine+1 < len(lines) {
 				after += "\n" + strings.Join(lines[endLine+1:], "\n")
 			}
@@ -459,11 +476,4 @@ func applyContentChanges(content string, changes []protocol.TextDocumentContentC
 		content = before + c.Text + after
 	}
 	return content
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

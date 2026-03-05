@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/position"
-	"github.com/gh-liu/obsidian.go/internal/lsp/template"
 	"go.lsp.dev/protocol"
 )
 
@@ -21,7 +20,7 @@ type FormatOp func(content string, ctx FormatContext) (*protocol.TextEdit, strin
 // FrontmatterOp ensures frontmatter has default fields (id, title, createdAt, updatedAt).
 // Edit range is limited to frontmatter only.
 func FrontmatterOp(content string, ctx FormatContext) (*protocol.TextEdit, string) {
-	formatted := template.EnsureFrontmatterDefaults(content, ctx.Title)
+	formatted := EnsureFrontmatterDefaults(content, ctx.Title)
 	if formatted == content {
 		return nil, content
 	}
@@ -48,11 +47,11 @@ func frontmatterRange(content string, enc position.Encoder) (start, end lineChar
 	if !strings.HasPrefix(content, "---\n") {
 		return lineChar{0, 0}, lineChar{0, 0}
 	}
-	idx := strings.Index(content[4:], "\n---")
-	if idx < 0 {
+	before, _, ok := strings.Cut(content[4:], "\n---")
+	if !ok {
 		return lineChar{0, 0}, lineChar{0, 0}
 	}
-	fm := content[:4+idx+4]
+	fm := content[:4+len(before)+4] // through closing "---"
 	lines := strings.Split(fm, "\n")
 	lastIdx := len(lines) - 1
 	if lastIdx < 0 {
@@ -66,9 +65,9 @@ func formattedFrontmatter(formatted string) string {
 	if !strings.HasPrefix(formatted, "---\n") {
 		return ""
 	}
-	idx := strings.Index(formatted[4:], "\n---")
-	if idx < 0 {
+	before, _, ok := strings.Cut(formatted[4:], "\n---")
+	if !ok {
 		return ""
 	}
-	return formatted[:4+idx+4]
+	return formatted[:4+len(before)+4]
 }

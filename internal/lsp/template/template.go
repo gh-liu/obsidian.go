@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const DefaultName = "default"
@@ -79,15 +78,14 @@ func ensureFrontmatterID(content, id string) string {
 	if !strings.HasPrefix(content, "---\n") {
 		return content
 	}
-	idx := strings.Index(content[4:], "\n---")
-	if idx < 0 {
+	before, after, ok := strings.Cut(content[4:], "\n---")
+	if !ok {
 		return content
 	}
-	fm := content[4 : 4+idx]
-	if hasIDKey(fm) {
+	if hasIDKey(before) {
 		return content
 	}
-	return content[:4] + "id: " + id + "\n" + fm + content[4+idx:]
+	return content[:4] + "id: " + id + "\n" + before + "\n---" + after
 }
 
 func hasIDKey(fm string) bool {
@@ -105,67 +103,3 @@ func hasKey(fm, key string) bool {
 	return false
 }
 
-// EnsureFrontmatterDefaults ensures content has frontmatter with default template fields
-// (id, title, createdAt, updatedAt). If no frontmatter, prepends full block; if present, injects missing fields.
-// updatedAt is always set to current time when formatting.
-// title is typically the note filename without .md.
-func EnsureFrontmatterDefaults(content, title string) string {
-	vars := NewVars(title)
-	updatedAt := time.Now().Format("2006-01-02 15:04:05")
-	if !strings.HasPrefix(content, "---\n") {
-		return frontmatterBlock(vars, updatedAt) + "\n" + content
-	}
-	idx := strings.Index(content[4:], "\n---")
-	if idx < 0 {
-		return content
-	}
-	fm := content[4 : 4+idx]
-	rest := content[4+idx:]
-	var inject []string
-	if !hasKey(fm, "id") {
-		inject = append(inject, "id: "+vars.ID)
-	}
-	if !hasKey(fm, "title") {
-		inject = append(inject, "title: "+title)
-	}
-	if !hasKey(fm, "createdAt") {
-		inject = append(inject, "createdAt: "+vars.Date)
-	}
-	if !hasKey(fm, "updatedAt") {
-		inject = append(inject, "updatedAt: "+updatedAt)
-	} else {
-		fm = replaceKeyValue(fm, "updatedAt", updatedAt)
-	}
-	if len(inject) == 0 && fm == content[4:4+idx] {
-		return content
-	}
-	newFm := strings.Join(inject, "\n")
-	if newFm != "" {
-		newFm += "\n"
-	}
-	newFm += fm
-	return content[:4] + newFm + rest
-}
-
-func replaceKeyValue(fm, key, value string) string {
-	prefix := key + ":"
-	var out []string
-	replaced := false
-	for _, line := range strings.Split(fm, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, prefix) {
-			out = append(out, key+": "+value)
-			replaced = true
-		} else {
-			out = append(out, line)
-		}
-	}
-	if !replaced {
-		return fm
-	}
-	return strings.Join(out, "\n")
-}
-
-func frontmatterBlock(v Vars, updatedAt string) string {
-	return "---\nid: " + v.ID + "\ntitle: " + v.Title + "\ncreatedAt: " + v.Date + "\nupdatedAt: " + updatedAt + "\n---"
-}

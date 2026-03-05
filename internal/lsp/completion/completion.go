@@ -33,12 +33,12 @@ func toWikiLinkContext(lineIdx int, ctx *parse.WikiLinkCursorContext) *wikiLinkC
 
 // ResolveCompletion returns completion items for Obsidian wiki links.
 // Trigger: [[ (file completion), [[# (current-file heading), [[path# (heading of path).
-func ResolveCompletion(ctx context.Context, idx *index.Index, root, encoding string, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
+func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding string, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
 	if idx == nil || params == nil {
 		return nil, nil
 	}
 
-	reqCtx, ok := buildRequestContext(idx, root, encoding, params)
+	reqCtx, ok := buildRequestContext(idx, relPath, encoding, params)
 	if !ok {
 		return nil, nil
 	}

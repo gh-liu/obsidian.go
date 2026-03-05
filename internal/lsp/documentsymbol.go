@@ -2,15 +2,11 @@ package lsp
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
 	"github.com/gh-liu/obsidian.go/internal/lsp/position"
-	"github.com/gh-liu/obsidian.go/parse"
 	"go.lsp.dev/protocol"
-	"go.lsp.dev/uri"
 )
 
 // docSymbolNode holds a DocumentSymbol and its children for tree building.
@@ -21,33 +17,24 @@ type docSymbolNode struct {
 
 // ResolveDocumentSymbol returns document symbols (TOC) for the given file.
 // Builds a tree from headings; Range covers the full section for folding, SelectionRange for highlight.
-func ResolveDocumentSymbol(ctx context.Context, idx *index.Index, root, encoding string, params *protocol.DocumentSymbolParams) ([]protocol.DocumentSymbol, error) {
+func ResolveDocumentSymbol(ctx context.Context, idx *index.Index, relPath, encoding string, params *protocol.DocumentSymbolParams) ([]protocol.DocumentSymbol, error) {
 	if idx == nil || params == nil {
 		return nil, nil
 	}
-	fullPath := uri.URI(params.TextDocument.URI).Filename()
-	rel, err := filepath.Rel(root, fullPath)
-	if err != nil {
-		return nil, nil
-	}
-	rel = filepath.ToSlash(rel)
-	if strings.HasPrefix(rel, "..") {
-		return nil, nil
-	}
 
-	content, err := os.ReadFile(fullPath)
+	content, err := idx.GetContent(relPath)
 	if err != nil {
 		return nil, nil
 	}
-	doc, err := parse.Parse(content, rel)
-	if err != nil {
+	doc := idx.GetByPath(relPath)
+	if doc == nil {
 		return nil, nil
 	}
 	if len(doc.Headings) == 0 {
 		return nil, nil
 	}
 
-	lines := strings.Split(string(content), "\n")
+	lines := strings.Split(content, "\n")
 	enc := position.Encoder{Encoding: encoding}
 
 	// Compute section end line for each heading: content until next heading of same-or-higher level.
@@ -70,14 +57,13 @@ func ResolveDocumentSymbol(ctx context.Context, idx *index.Index, root, encoding
 	nodes := make([]*docSymbolNode, len(doc.Headings))
 	for i := range doc.Headings {
 		h := doc.Headings[i]
-		selRange := rangeToProtocolFromLines(lines, h.Range, enc)
+		selRange := rangeToProtocol(idx, relPath, h.Range, enc)
 		endLine := sectionEndLines[i]
 		endChar := len(lineAt(lines, endLine))
-		sectionRange := parse.Range{
-			Start: h.Range.Start,
-			End:   parse.Pos{Line: endLine, Character: endChar},
-		}
-		fullRange := rangeToProtocolFromLines(lines, sectionRange, enc)
+		sectionRange := h.Range
+		sectionRange.End.Line = endLine
+		sectionRange.End.Character = endChar
+		fullRange := rangeToProtocol(idx, relPath, sectionRange, enc)
 
 		nodes[i] = &docSymbolNode{
 			symbol: protocol.DocumentSymbol{
@@ -124,13 +110,4 @@ func nodeToSymbol(n *docSymbolNode) protocol.DocumentSymbol {
 		}
 	}
 	return s
-}
-
-func rangeToProtocolFromLines(lines []string, r parse.Range, enc position.Encoder) protocol.Range {
-	startChar := enc.ByteToChar(lineAt(lines, r.Start.Line), r.Start.Character)
-	endChar := enc.ByteToChar(lineAt(lines, r.End.Line), r.End.Character)
-	return protocol.Range{
-		Start: protocol.Position{Line: uint32(r.Start.Line), Character: uint32(startChar)},
-		End:   protocol.Position{Line: uint32(r.End.Line), Character: uint32(endChar)},
-	}
 }

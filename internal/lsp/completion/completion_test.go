@@ -43,7 +43,7 @@ id: 1772269373-USPT
 			Position:     protocol.Position{Line: 0, Character: 22},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -80,7 +80,7 @@ id: 1772269373-USPT
 			Position:     protocol.Position{Line: 0, Character: 22},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestResolveCompletion_FileLinks(t *testing.T) {
 			Position:     protocol.Position{Line: 0, Character: 6},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestResolveCompletion_HeadingLinks(t *testing.T) {
 			Position:     protocol.Position{Line: 3, Character: 3},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestResolveCompletion_HeadingByBasename(t *testing.T) {
 			Position:     protocol.Position{Line: 0, Character: 22},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -229,7 +229,7 @@ id: note-a
 			Position:     protocol.Position{Line: 0, Character: 2},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestResolveCompletion_CurrentFileBlocks(t *testing.T) {
 			Position:     protocol.Position{Line: 2, Character: 4},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestResolveCompletion_TargetFileBlocksByID(t *testing.T) {
 			Position:     protocol.Position{Line: 0, Character: 17},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -347,7 +347,7 @@ aliases: [AI, AGI]
 			Position:     protocol.Position{Line: 0, Character: 8},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -390,7 +390,7 @@ aliases: [AIOnly]
 			Position:     protocol.Position{Line: 0, Character: 8},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestResolveCompletion_HeadingOrderingByMatchQuality(t *testing.T) {
 			Position:     protocol.Position{Line: 5, Character: 5},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestResolveCompletion_OutsideWikiLink(t *testing.T) {
 			Position:     protocol.Position{Line: 0, Character: 5},
 		},
 	}
-	list, err := ResolveCompletion(context.Background(), idx, dir, "utf-8", params)
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
 	if err != nil {
 		t.Fatalf("ResolveCompletion: %v", err)
 	}

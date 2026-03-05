@@ -3,6 +3,7 @@ package template
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -65,14 +66,7 @@ func TestListNames(t *testing.T) {
 			t.Errorf("got %v, want %v", names, want)
 		}
 		for _, n := range want {
-			var found bool
-			for _, got := range names {
-				if got == n {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(names, n) {
 				t.Errorf("missing %q in %v", n, names)
 			}
 		}
@@ -169,74 +163,3 @@ body`
 	}
 }
 
-func TestEnsureFrontmatterDefaults(t *testing.T) {
-	t.Run("no frontmatter adds full block", func(t *testing.T) {
-		content := "# Hello\nbody"
-		got := EnsureFrontmatterDefaults(content, "Hello")
-		if !strings.HasPrefix(got, "---\n") {
-			t.Errorf("expected frontmatter, got %q", got)
-		}
-		if !strings.Contains(got, "id:") || !strings.Contains(got, "title: Hello") || !strings.Contains(got, "createdAt:") || !strings.Contains(got, "updatedAt:") {
-			t.Errorf("expected id, title, createdAt, updatedAt, got %q", got)
-		}
-		if !strings.HasSuffix(got, "\n# Hello\nbody") {
-			t.Errorf("expected body preserved, got %q", got)
-		}
-	})
-	t.Run("has all fields updates updatedAt", func(t *testing.T) {
-		content := `---
-id: 123-ABCD
-title: Foo
-createdAt: 2025-01-01
-updatedAt: 2025-01-01 12:00:00
----
-body`
-		got := EnsureFrontmatterDefaults(content, "Foo")
-		if !strings.Contains(got, "updatedAt:") {
-			t.Errorf("expected updatedAt, got %q", got)
-		}
-		if strings.Contains(got, "updatedAt: 2025-01-01 12:00:00") {
-			t.Errorf("expected updatedAt to be current time, got %q", got)
-		}
-		if !strings.Contains(got, "id: 123-ABCD") || !strings.Contains(got, "title: Foo") {
-			t.Errorf("expected other fields preserved, got %q", got)
-		}
-	})
-	t.Run("missing id injects", func(t *testing.T) {
-		content := `---
-title: Bar
-createdAt: 2025-01-01
----
-body`
-		got := EnsureFrontmatterDefaults(content, "Bar")
-		if !strings.Contains(got, "id:") {
-			t.Errorf("expected id injected, got %q", got)
-		}
-		if got == content {
-			t.Errorf("expected change when id missing")
-		}
-	})
-	t.Run("missing title injects", func(t *testing.T) {
-		content := `---
-id: 1-AAAA
-createdAt: 2025-01-01
----
-body`
-		got := EnsureFrontmatterDefaults(content, "Baz")
-		if !strings.Contains(got, "title: Baz") {
-			t.Errorf("expected title: Baz injected, got %q", got)
-		}
-	})
-	t.Run("missing updatedAt injects", func(t *testing.T) {
-		content := `---
-id: 1-AAAA
-title: Qux
-createdAt: 2025-01-01
----
-body`
-		got := EnsureFrontmatterDefaults(content, "Qux")
-		if !strings.Contains(got, "updatedAt:") {
-			t.Errorf("expected updatedAt injected, got %q", got)
-		}
-	})
-}

@@ -3,12 +3,16 @@ package index
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/gh-liu/obsidian.go/parse"
+	"golang.org/x/sync/errgroup"
 )
 
 // Index holds the vault index: path→Doc, id→path.
@@ -26,7 +30,14 @@ type Index struct {
 	ignore        IgnoreFunc
 	byPath        map[string]*parse.Doc
 	byID          map[string]string // id → path (only when frontmatter has id)
+	byBasename    map[string][]string
 	contentByPath map[string]string // path → raw content for open files (unsaved)
+}
+
+// PathDoc is an immutable snapshot entry for path/doc pairs.
+type PathDoc struct {
+	Path string
+	Doc  *parse.Doc
 }
 
 // New creates an empty index for the given vault root.
@@ -43,6 +54,7 @@ func New(root string, log *slog.Logger, ignore IgnoreFunc) *Index {
 		ignore:        ignore,
 		byPath:        make(map[string]*parse.Doc),
 		byID:          make(map[string]string),
+		byBasename:    make(map[string][]string),
 		contentByPath: make(map[string]string),
 	}
 }
@@ -74,14 +86,18 @@ func (x *Index) IndexAll(ctx context.Context) error {
 
 	byPath := make(map[string]*parse.Doc)
 	byID := make(map[string]string)
+	byBasename := make(map[string][]string)
 	var mu sync.Mutex
 
-	taskCh, wait := NewPool(ctx, 0)
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(runtime.NumCPU() * 2)
 	for _, rel := range paths {
+		rel := rel
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case taskCh <- func() error {
+		case <-gctx.Done():
+			return gctx.Err()
+		default:
+			g.Go(func() error {
 			x.log.Info("index " + rel)
 			doc, err := x.indexFile(rel)
 			if err != nil {
@@ -92,19 +108,21 @@ func (x *Index) IndexAll(ctx context.Context) error {
 			if doc.ID != "" {
 				byID[doc.ID] = rel
 			}
+			baseKey := basenameKey(rel)
+			byBasename[baseKey] = append(byBasename[baseKey], rel)
 			mu.Unlock()
 			return nil
-		}:
+			})
 		}
 	}
-	close(taskCh)
-	if err := wait(); err != nil {
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
 	x.mu.Lock()
 	x.byPath = byPath
 	x.byID = byID
+	x.byBasename = byBasename
 	x.mu.Unlock()
 
 	x.log.Info("index complete", "root", x.root, "files", len(byPath))
@@ -121,10 +139,8 @@ func (x *Index) Add(path string, content []byte) error {
 	}
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	x.byPath[path] = doc
-	if doc.ID != "" {
-		x.byID[doc.ID] = path
-	}
+	x.removeDocLocked(path)
+	x.addDocLocked(path, doc)
 	return nil
 }
 
@@ -133,10 +149,7 @@ func (x *Index) Remove(path string) {
 	path = filepath.ToSlash(path)
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if doc, ok := x.byPath[path]; ok && doc.ID != "" {
-		delete(x.byID, doc.ID)
-	}
-	delete(x.byPath, path)
+	x.removeDocLocked(path)
 	delete(x.contentByPath, path)
 }
 
@@ -149,13 +162,8 @@ func (x *Index) Update(path string, content []byte) error {
 	}
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if old, ok := x.byPath[path]; ok && old.ID != "" && old.ID != doc.ID {
-		delete(x.byID, old.ID)
-	}
-	x.byPath[path] = doc
-	if doc.ID != "" {
-		x.byID[doc.ID] = path
-	}
+	x.removeDocLocked(path)
+	x.addDocLocked(path, doc)
 	return nil
 }
 
@@ -191,24 +199,82 @@ func (x *Index) ResolveLinkTargetToPath(target string) string {
 		}
 	}
 	// Obsidian: link by basename when path not found (e.g. [[CS_GO++compiler]] for folder/CS_GO++compiler.md)
-	targetBase := strings.TrimSuffix(strings.ToLower(target), ".md")
-	for p := range x.byPath {
-		base := filepath.Base(p)
-		baseNoExt := strings.TrimSuffix(strings.ToLower(base), ".md")
-		if baseNoExt == targetBase || base == target {
-			return p
+	targetBase := basenameKey(target)
+	if targetBase == "" {
+		return ""
+	}
+	candidates := x.byBasename[targetBase]
+	if len(candidates) == 0 {
+		return ""
+	}
+	best := candidates[0]
+	for i := 1; i < len(candidates); i++ {
+		p := candidates[i]
+		if len(p) < len(best) || (len(p) == len(best) && p < best) {
+			best = p
 		}
 	}
-	return ""
+	return best
+}
+
+func basenameKey(path string) string {
+	base := strings.ToLower(filepath.Base(filepath.ToSlash(path)))
+	return strings.TrimSuffix(base, ".md")
+}
+
+func (x *Index) addDocLocked(path string, doc *parse.Doc) {
+	x.byPath[path] = doc
+	if doc != nil && doc.ID != "" {
+		x.byID[doc.ID] = path
+	}
+	baseKey := basenameKey(path)
+	if baseKey == "" {
+		return
+	}
+	x.byBasename[baseKey] = append(x.byBasename[baseKey], path)
+}
+
+func (x *Index) removeDocLocked(path string) {
+	old, ok := x.byPath[path]
+	if !ok {
+		return
+	}
+	if old != nil && old.ID != "" {
+		delete(x.byID, old.ID)
+	}
+	delete(x.byPath, path)
+
+	baseKey := basenameKey(path)
+	paths := x.byBasename[baseKey]
+	for i, p := range paths {
+		if p != path {
+			continue
+		}
+		paths = append(paths[:i], paths[i+1:]...)
+		if len(paths) == 0 {
+			delete(x.byBasename, baseKey)
+		} else {
+			x.byBasename[baseKey] = paths
+		}
+		break
+	}
 }
 
 // ListPaths returns all indexed paths (relative to vault root).
 func (x *Index) ListPaths() []string {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
-	out := make([]string, 0, len(x.byPath))
-	for p := range x.byPath {
-		out = append(out, p)
+	return slices.Collect(maps.Keys(x.byPath))
+}
+
+// SnapshotPaths returns a snapshot of all indexed (path, doc) pairs.
+// Iteration over the returned slice does not hold Index locks.
+func (x *Index) SnapshotPaths() []PathDoc {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	out := make([]PathDoc, 0, len(x.byPath))
+	for p, doc := range x.byPath {
+		out = append(out, PathDoc{Path: p, Doc: doc})
 	}
 	return out
 }
@@ -236,13 +302,8 @@ func (x *Index) SetContent(path string, content []byte) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	x.contentByPath[path] = string(content)
-	if old, ok := x.byPath[path]; ok && old.ID != "" && old.ID != doc.ID {
-		delete(x.byID, old.ID)
-	}
-	x.byPath[path] = doc
-	if doc.ID != "" {
-		x.byID[doc.ID] = path
-	}
+	x.removeDocLocked(path)
+	x.addDocLocked(path, doc)
 	return nil
 }
 
@@ -255,23 +316,15 @@ func (x *Index) ClearContent(path string) {
 	delete(x.contentByPath, path)
 	content, err := os.ReadFile(filepath.Join(x.root, path))
 	if err != nil {
-		if doc, ok := x.byPath[path]; ok && doc.ID != "" {
-			delete(x.byID, doc.ID)
-		}
-		delete(x.byPath, path)
+		x.removeDocLocked(path)
 		return
 	}
 	doc, err := parse.Parse(content, path)
 	if err != nil {
 		return
 	}
-	if old, ok := x.byPath[path]; ok && old.ID != "" && old.ID != doc.ID {
-		delete(x.byID, old.ID)
-	}
-	x.byPath[path] = doc
-	if doc.ID != "" {
-		x.byID[doc.ID] = path
-	}
+	x.removeDocLocked(path)
+	x.addDocLocked(path, doc)
 }
 
 // GetContent returns raw content for the path: from open-file cache if set, else from disk.

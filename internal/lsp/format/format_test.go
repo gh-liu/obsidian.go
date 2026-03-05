@@ -42,3 +42,36 @@ body`
 		}
 	})
 }
+
+func TestEnsureFrontmatterDefaults(t *testing.T) {
+	t.Run("no frontmatter adds full block", func(t *testing.T) {
+		content := "# Hello\nbody"
+		got := EnsureFrontmatterDefaults(content, "Hello")
+		if !strings.HasPrefix(got, "---\n") {
+			t.Errorf("expected frontmatter, got %q", got)
+		}
+		if !strings.Contains(got, "id:") || !strings.Contains(got, "title: Hello") || !strings.Contains(got, "createdAt:") || !strings.Contains(got, "updatedAt:") {
+			t.Errorf("expected id, title, createdAt, updatedAt, got %q", got)
+		}
+		if !strings.HasSuffix(got, "\n# Hello\nbody") {
+			t.Errorf("expected body preserved, got %q", got)
+		}
+	})
+
+	t.Run("existing updatedAt gets refreshed", func(t *testing.T) {
+		content := `---
+id: 123-ABCD
+title: Foo
+createdAt: 2025-01-01
+updatedAt: 2025-01-01 12:00:00
+---
+body`
+		got := EnsureFrontmatterDefaults(content, "Foo")
+		if !strings.Contains(got, "updatedAt:") {
+			t.Errorf("expected updatedAt, got %q", got)
+		}
+		if strings.Contains(got, "updatedAt: 2025-01-01 12:00:00") {
+			t.Errorf("expected updatedAt to be refreshed, got %q", got)
+		}
+	})
+}

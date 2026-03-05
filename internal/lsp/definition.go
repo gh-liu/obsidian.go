@@ -15,13 +15,13 @@ import (
 
 // ResolveDefinition resolves textDocument/definition for Obsidian wiki links.
 // Returns target file location, or target file + heading if link has #anchor.
-func ResolveDefinition(ctx context.Context, idx *index.Index, root, encoding string, params *protocol.DefinitionParams) ([]protocol.Location, error) {
+func ResolveDefinition(ctx context.Context, idx *index.Index, relPath, encoding string, params *protocol.DefinitionParams) ([]protocol.Location, error) {
 	if idx == nil || params == nil {
 		return nil, nil
 	}
 	enc := position.Encoder{Encoding: encoding}
 
-	rel, doc, lines := sourceContext(idx, root, params)
+	rel, doc, lines := sourceContext(idx, relPath)
 	if doc == nil {
 		return nil, nil
 	}
@@ -36,8 +36,8 @@ func ResolveDefinition(ctx context.Context, idx *index.Index, root, encoding str
 		return nil, nil
 	}
 	var targetPath string
-	if link.Target != nil {
-		targetPath = idx.ResolveLinkTargetToPath(link.Target.ID)
+	if link.Target != "" {
+		targetPath = idx.ResolveLinkTargetToPath(link.Target)
 		if targetPath == "" {
 			return nil, nil
 		}
@@ -47,24 +47,18 @@ func ResolveDefinition(ctx context.Context, idx *index.Index, root, encoding str
 	}
 
 	var loc protocol.Location
-	if link.Block != nil {
-		loc = targetLocationBlock(idx, root, targetPath, link.Block.ID, enc)
-	} else if link.Anchor != nil {
-		loc = targetLocation(idx, root, targetPath, link.Anchor.Text, enc)
+	if link.BlockRef != "" {
+		loc = targetLocationBlock(idx, targetPath, link.BlockRef, enc)
+	} else if link.Anchor != "" {
+		loc = targetLocation(idx, targetPath, link.Anchor, enc)
 	} else {
-		loc = targetLocation(idx, root, targetPath, "", enc)
+		loc = targetLocation(idx, targetPath, "", enc)
 	}
 	return []protocol.Location{loc}, nil
 }
 
-// sourceContext returns (relPath, doc, lines) for the file in params.
-func sourceContext(idx *index.Index, root string, params *protocol.DefinitionParams) (string, *parse.Doc, []string) {
-	fullPath := uri.URI(params.TextDocument.URI).Filename()
-	rel, err := filepath.Rel(root, fullPath)
-	if err != nil {
-		return "", nil, nil
-	}
-	rel = filepath.ToSlash(rel)
+// sourceContext returns (relPath, doc, lines) for the source file.
+func sourceContext(idx *index.Index, rel string) (string, *parse.Doc, []string) {
 	doc := idx.GetByPath(rel)
 	if doc == nil {
 		return "", nil, nil
@@ -98,8 +92,8 @@ func inRange(line, byteOff int, r parse.Range) bool {
 }
 
 // targetLocation builds protocol.Location for targetPath, optionally at heading anchor.
-func targetLocation(idx *index.Index, root, targetPath, anchor string, enc position.Encoder) protocol.Location {
-	uri := uri.File(filepath.Join(root, targetPath))
+func targetLocation(idx *index.Index, targetPath, anchor string, enc position.Encoder) protocol.Location {
+	uri := uri.File(filepath.Join(idx.Root(), targetPath))
 	rng := protocol.Range{
 		Start: protocol.Position{Line: 0, Character: 0},
 		End:   protocol.Position{Line: 0, Character: 0},
@@ -116,8 +110,8 @@ func targetLocation(idx *index.Index, root, targetPath, anchor string, enc posit
 }
 
 // targetLocationBlock builds protocol.Location for targetPath at block ID.
-func targetLocationBlock(idx *index.Index, root, targetPath, blockID string, enc position.Encoder) protocol.Location {
-	uri := uri.File(filepath.Join(root, targetPath))
+func targetLocationBlock(idx *index.Index, targetPath, blockID string, enc position.Encoder) protocol.Location {
+	uri := uri.File(filepath.Join(idx.Root(), targetPath))
 	rng := protocol.Range{
 		Start: protocol.Position{Line: 0, Character: 0},
 		End:   protocol.Position{Line: 0, Character: 0},

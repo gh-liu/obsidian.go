@@ -1,12 +1,9 @@
 package completion
 
 import (
-	"path/filepath"
-
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
 	"github.com/gh-liu/obsidian.go/internal/lsp/position"
 	"go.lsp.dev/protocol"
-	"go.lsp.dev/uri"
 )
 
 type requestContext struct {
@@ -17,16 +14,8 @@ type requestContext struct {
 	enc        position.Encoder
 }
 
-func buildRequestContext(idx *index.Index, root, encoding string, params *protocol.CompletionParams) (requestContext, bool) {
-	docURI := params.TextDocument.URI
-	fullPath := uri.URI(docURI).Filename()
-	rel, err := filepath.Rel(root, fullPath)
-	if err != nil {
-		return requestContext{}, false
-	}
-	rel = filepath.ToSlash(rel)
-
-	lines, err := idx.GetLines(rel)
+func buildRequestContext(idx *index.Index, relPath, encoding string, params *protocol.CompletionParams) (requestContext, bool) {
+	lines, err := idx.GetLines(relPath)
 	if err != nil {
 		return requestContext{}, false
 	}
@@ -36,7 +25,7 @@ func buildRequestContext(idx *index.Index, root, encoding string, params *protoc
 		return requestContext{}, false
 	}
 	return requestContext{
-		currentRel: rel,
+		currentRel: relPath,
 		line:       lines[lineIdx],
 		lineIdx:    lineIdx,
 		cursorChar: cursorChar,
