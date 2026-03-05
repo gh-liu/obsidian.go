@@ -8,6 +8,8 @@ import (
 	"go.lsp.dev/protocol"
 )
 
+const maxCompletionItems = 100
+
 // wikiLinkContext describes the completion context inside a wiki link [[...]].
 type wikiLinkContext struct {
 	startLine, startChar int
@@ -46,6 +48,12 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 
 	linkCtx := toWikiLinkContext(reqCtx.lineIdx, parse.ParseWikiLinkCursorContext(reqCtx.line, byteOff))
 	if linkCtx == nil {
+		// Cursor after a single [ that may become [[.
+		// Return IsIncomplete to keep the client session open so the next
+		// keystroke triggers a re-query.
+		if byteOff > 0 && reqCtx.line[byteOff-1] == '[' {
+			return &protocol.CompletionList{IsIncomplete: true}, nil
+		}
 		return nil, nil
 	}
 	var items []protocol.CompletionItem
@@ -56,5 +64,16 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 	} else {
 		items = completeHeadings(idx, reqCtx.currentRel, linkCtx, reqCtx)
 	}
-	return &protocol.CompletionList{Items: items}, nil
+	isIncomplete := false
+	if linkCtx.completeFiles && len(items) > maxCompletionItems {
+		items = items[:maxCompletionItems]
+		// Some clients suppress popup when IsIncomplete=true with empty prefix.
+		// Keep empty-prefix completion visible, and use incomplete mode only when
+		// user has started typing a filter.
+		isIncomplete = linkCtx.prefix != ""
+	}
+	return &protocol.CompletionList{
+		IsIncomplete: isIncomplete,
+		Items:        items,
+	}, nil
 }

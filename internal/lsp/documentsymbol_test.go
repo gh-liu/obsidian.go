@@ -75,6 +75,7 @@ func TestResolveDocumentSymbol_UsesOpenContent(t *testing.T) {
 	if err := idx.SetContent("doc.md", []byte("# Open\n## Child\n")); err != nil {
 		t.Fatalf("SetContent: %v", err)
 	}
+	idx.FlushReparse("doc.md")
 
 	params := &protocol.DocumentSymbolParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(path)},

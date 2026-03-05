@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
@@ -22,6 +24,14 @@ func writeRefFile(t *testing.T, dir, name, content string) {
 	}
 }
 
+func setOpenContent(t *testing.T, idx *index.Index, path, content string) {
+	t.Helper()
+	if err := idx.SetContent(path, []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse(path)
+}
+
 func TestResolveCompletion_HeadingByID_ClosedLink(t *testing.T) {
 	// Cursor inside closed link [[1772269373-USPT#工具]] - should still complete.
 	dir := t.TempDir()
@@ -35,7 +45,7 @@ id: 1772269373-USPT
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte(content))
+	setOpenContent(t, idx, "note.md", content)
 	// Cursor at position 22: right after #, before 工 (See [[1772269373-USPT#|工具]])
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -73,7 +83,7 @@ id: 1772269373-USPT
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("See [[1772269373-USPT#"))
+	setOpenContent(t, idx, "note.md", "See [[1772269373-USPT#")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -108,7 +118,7 @@ func TestResolveCompletion_FileLinks(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("See [["))
+	setOpenContent(t, idx, "note.md", "See [[")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -136,6 +146,147 @@ func TestResolveCompletion_FileLinks(t *testing.T) {
 	}
 }
 
+func TestResolveCompletion_FileLinksTruncatedWhenTooMany(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 130; i++ {
+		name := filepath.Join("notes", "item-"+strconv.Itoa(i)+".md")
+		writeRefFile(t, dir, name, "# Item")
+	}
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	setOpenContent(t, idx, "note.md", "See [[")
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 0, Character: 6},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("expected non-nil CompletionList")
+	}
+	if list.IsIncomplete {
+		t.Fatal("want IsIncomplete=false for empty prefix to keep popup visible")
+	}
+	if got := len(list.Items); got != maxCompletionItems {
+		t.Fatalf("want %d truncated items, got %d", maxCompletionItems, got)
+	}
+}
+
+func TestResolveCompletion_FileLinksTruncatedWithPrefixMarksIncomplete(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 130; i++ {
+		name := filepath.Join("notes", "topic-"+strconv.Itoa(i)+".md")
+		writeRefFile(t, dir, name, "# Topic")
+	}
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	setOpenContent(t, idx, "note.md", "See [[to")
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 0, Character: 8},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("expected non-nil CompletionList")
+	}
+	if !list.IsIncomplete {
+		t.Fatal("want IsIncomplete=true for non-empty prefix when candidates are truncated")
+	}
+	if got := len(list.Items); got != maxCompletionItems {
+		t.Fatalf("want %d truncated items, got %d", maxCompletionItems, got)
+	}
+}
+
+func TestResolveCompletion_FileLinks_EmptyPrefixPrefersSameDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "a.md", "# root a")
+	writeRefFile(t, dir, "z.md", "# root z")
+	writeRefFile(t, dir, "sub/a.md", "# sub a")
+	writeRefFile(t, dir, "sub/z.md", "# sub z")
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	setOpenContent(t, idx, "sub/note.md", "See [[")
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "sub/note.md"))},
+			Position:     protocol.Position{Line: 0, Character: 6},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, "sub/note.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("expected non-nil CompletionList")
+	}
+	labels := collectLabels(list)
+	subA := indexOfLabel(labels, "sub/a")
+	subZ := indexOfLabel(labels, "sub/z")
+	rootA := indexOfLabel(labels, "a")
+	rootZ := indexOfLabel(labels, "z")
+	if subA < 0 || subZ < 0 || rootA < 0 || rootZ < 0 {
+		t.Fatalf("missing expected labels, got %v", labels)
+	}
+	if !(subA < rootA && subZ < rootZ) {
+		t.Fatalf("want same-directory files before other directories, got %v", labels)
+	}
+}
+
+func TestResolveCompletion_HeadingByID_EmptyPrefixReturnsAllHeadings(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString("---\nid: doc-large\n---\n")
+	for i := 0; i < 130; i++ {
+		b.WriteString("## H")
+		b.WriteString(strconv.Itoa(i))
+		b.WriteString("\n")
+	}
+	writeRefFile(t, dir, "big.md", b.String())
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	setOpenContent(t, idx, "note.md", "See [[doc-large#")
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 0, Character: 16},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("expected non-nil CompletionList")
+	}
+	if list.IsIncomplete {
+		t.Fatal("want IsIncomplete=false for heading completion")
+	}
+	if got := len(list.Items); got != 130 {
+		t.Fatalf("want all 130 headings, got %d", got)
+	}
+}
+
 func TestResolveCompletion_HeadingLinks(t *testing.T) {
 	dir := t.TempDir()
 	writeRefFile(t, dir, "note.md", `# Title
@@ -146,10 +297,10 @@ func TestResolveCompletion_HeadingLinks(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte(`# Title
+	setOpenContent(t, idx, "note.md", `# Title
 ## Section 1
 ## Section 2
-[[#`))
+[[#`)
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -186,7 +337,7 @@ func TestResolveCompletion_HeadingByBasename(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("See [[CS_GO++compiler#"))
+	setOpenContent(t, idx, "note.md", "See [[CS_GO++compiler#")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -222,7 +373,7 @@ id: note-a
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("[["))
+	setOpenContent(t, idx, "note.md", "[[")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -271,7 +422,7 @@ func TestResolveCompletion_CurrentFileBlocks(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("line one ^alpha\nline two ^beta\n[[#^"))
+	setOpenContent(t, idx, "note.md", "line one ^alpha\nline two ^beta\n[[#^")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -304,7 +455,7 @@ func TestResolveCompletion_TargetFileBlocksByID(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("See [[target-id#^"))
+	setOpenContent(t, idx, "note.md", "See [[target-id#^")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -340,7 +491,7 @@ aliases: [AI, AGI]
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("See [[AI"))
+	setOpenContent(t, idx, "note.md", "See [[AI")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -383,7 +534,7 @@ aliases: [AIOnly]
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("See [[ai"))
+	setOpenContent(t, idx, "note.md", "See [[ai")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -425,12 +576,12 @@ func TestResolveCompletion_HeadingOrderingByMatchQuality(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte(`# T
+	setOpenContent(t, idx, "note.md", `# T
 ## Alpha
 ## Algebra
 ## Beta Alpha
 ## Zeta al
-[[#al`))
+[[#al`)
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
@@ -467,7 +618,7 @@ func TestResolveCompletion_OutsideWikiLink(t *testing.T) {
 	if err := idx.IndexAll(context.Background()); err != nil {
 		t.Fatalf("IndexAll: %v", err)
 	}
-	_ = idx.SetContent("note.md", []byte("plain text"))
+	setOpenContent(t, idx, "note.md", "plain text")
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},

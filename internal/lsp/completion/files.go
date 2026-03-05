@@ -1,6 +1,7 @@
 package completion
 
 import (
+	"path"
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
@@ -18,6 +19,7 @@ type fileCompletionItem struct {
 
 func completeFiles(idx *index.Index, ctx *wikiLinkContext, reqCtx requestContext) []protocol.CompletionItem {
 	prefixLower := strings.ToLower(ctx.prefix)
+	currentDir := path.Dir(reqCtx.currentRel)
 	var scored []scoredItem
 	rng := buildReplaceRange(ctx, reqCtx)
 
@@ -29,9 +31,14 @@ func completeFiles(idx *index.Index, ctx *wikiLinkContext, reqCtx requestContext
 		if display == "" {
 			display = p
 		}
-		score := fileMatchScore(prefixLower, display, p, doc.Aliases)
+		displayLower := strings.ToLower(display)
+		pathLower := strings.ToLower(p)
+		score := fileMatchScore(prefixLower, displayLower, pathLower, doc.Aliases)
 		if score == 0 {
 			return true
+		}
+		if prefixLower == "" && path.Dir(p) == currentDir {
+			score++
 		}
 		fc := buildFileCompletionItem(p, display, doc)
 		item := protocol.CompletionItem{

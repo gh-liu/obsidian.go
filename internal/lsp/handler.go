@@ -55,6 +55,10 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 	h.positionEncoding = extractPositionEncoding(params)
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
+			TextDocumentSync: &protocol.TextDocumentSyncOptions{
+				OpenClose: true,
+				Change:    protocol.TextDocumentSyncKindFull,
+			},
 			DefinitionProvider:         true,
 			ReferencesProvider:         true,
 			DocumentSymbolProvider:     true,

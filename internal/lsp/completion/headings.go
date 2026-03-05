@@ -24,7 +24,8 @@ func completeHeadings(idx *index.Index, currentRel string, wikiCtx *wikiLinkCont
 		if h == nil {
 			continue
 		}
-		score := headingMatchScore(prefixLower, h.Text)
+		headingLower := strings.ToLower(h.Text)
+		score := headingMatchScore(prefixLower, headingLower)
 		if score == 0 {
 			continue
 		}

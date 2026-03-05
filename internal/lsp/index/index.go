@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gh-liu/obsidian.go/parse"
 	"golang.org/x/sync/errgroup"
@@ -32,7 +33,11 @@ type Index struct {
 	byID          map[string]string // id → path (only when frontmatter has id)
 	byBasename    map[string][]string
 	contentByPath map[string]string // path → raw content for open files (unsaved)
+	debounceMu    sync.Mutex
+	debounceTimers map[string]*time.Timer
 }
+
+const reparseDelay = 100 * time.Millisecond
 
 // PathDoc is an immutable snapshot entry for path/doc pairs.
 type PathDoc struct {
@@ -56,6 +61,7 @@ func New(root string, log *slog.Logger, ignore IgnoreFunc) *Index {
 		byID:          make(map[string]string),
 		byBasename:    make(map[string][]string),
 		contentByPath: make(map[string]string),
+		debounceTimers: make(map[string]*time.Timer),
 	}
 }
 
@@ -293,17 +299,13 @@ func (x *Index) RangePaths(fn func(path string, doc *parse.Doc) bool) {
 
 // SetContent stores raw content for an open file and updates the parsed Doc.
 // Called on DidOpen/DidChange. path is relative to root.
+// Re-parsing is debounced to reduce lock contention during fast typing.
 func (x *Index) SetContent(path string, content []byte) error {
 	path = filepath.ToSlash(path)
-	doc, err := parse.Parse(content, path)
-	if err != nil {
-		return err
-	}
 	x.mu.Lock()
-	defer x.mu.Unlock()
 	x.contentByPath[path] = string(content)
-	x.removeDocLocked(path)
-	x.addDocLocked(path, doc)
+	x.mu.Unlock()
+	x.scheduleReparse(path)
 	return nil
 }
 
@@ -311,6 +313,7 @@ func (x *Index) SetContent(path string, content []byte) error {
 // If the file does not exist on disk, removes it from the index.
 func (x *Index) ClearContent(path string) {
 	path = filepath.ToSlash(path)
+	x.cancelPendingReparse(path)
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	delete(x.contentByPath, path)
@@ -325,6 +328,61 @@ func (x *Index) ClearContent(path string) {
 	}
 	x.removeDocLocked(path)
 	x.addDocLocked(path, doc)
+}
+
+func (x *Index) scheduleReparse(path string) {
+	x.debounceMu.Lock()
+	if t, ok := x.debounceTimers[path]; ok {
+		t.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(reparseDelay, func() {
+		x.debounceMu.Lock()
+		if current, ok := x.debounceTimers[path]; ok && current == timer {
+			delete(x.debounceTimers, path)
+		}
+		x.debounceMu.Unlock()
+		x.reparseFromContent(path)
+	})
+	x.debounceTimers[path] = timer
+	x.debounceMu.Unlock()
+}
+
+func (x *Index) cancelPendingReparse(path string) {
+	x.debounceMu.Lock()
+	defer x.debounceMu.Unlock()
+	if t, ok := x.debounceTimers[path]; ok {
+		t.Stop()
+		delete(x.debounceTimers, path)
+	}
+}
+
+func (x *Index) reparseFromContent(path string) {
+	x.mu.RLock()
+	content, ok := x.contentByPath[path]
+	x.mu.RUnlock()
+	if !ok {
+		return
+	}
+	doc, err := parse.Parse([]byte(content), path)
+	if err != nil {
+		return
+	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if _, ok := x.contentByPath[path]; !ok {
+		return
+	}
+	x.removeDocLocked(path)
+	x.addDocLocked(path, doc)
+}
+
+// FlushReparse synchronously reparses current open content for path.
+// Intended for tests to avoid waiting for debounce delay.
+func (x *Index) FlushReparse(path string) {
+	path = filepath.ToSlash(path)
+	x.cancelPendingReparse(path)
+	x.reparseFromContent(path)
 }
 
 // GetContent returns raw content for the path: from open-file cache if set, else from disk.

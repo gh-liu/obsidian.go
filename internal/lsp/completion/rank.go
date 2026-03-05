@@ -2,40 +2,42 @@ package completion
 
 import "strings"
 
-func fileMatchScore(prefixLower, display, path string, aliases []string) int {
+func fileMatchScore(prefixLower, displayLower, pathLower string, aliases []string) int {
 	if prefixLower == "" {
 		return 1
 	}
-	if hasPrefixOrContains(prefixLower, display) == 2 || hasPrefixOrContains(prefixLower, path) == 2 {
+	displayMatch := matchLevel(prefixLower, displayLower)
+	pathMatch := matchLevel(prefixLower, pathLower)
+	best := max(displayMatch, pathMatch)
+	if best == 2 {
 		return 3
 	}
-	if hasPrefixOrContains(prefixLower, display) == 1 || hasPrefixOrContains(prefixLower, path) == 1 {
+	if best == 1 {
 		return 2
 	}
 	for _, alias := range aliases {
-		if hasPrefixOrContains(prefixLower, alias) > 0 {
+		if matchLevel(prefixLower, strings.ToLower(alias)) > 0 {
 			return 1
 		}
 	}
 	return 0
 }
 
-func headingMatchScore(prefixLower, heading string) int {
+func headingMatchScore(prefixLower, headingLower string) int {
 	if prefixLower == "" {
 		return 1
 	}
-	return hasPrefixOrContains(prefixLower, heading)
+	return matchLevel(prefixLower, headingLower)
 }
 
-func blockMatchScore(prefixLower, blockID string) int {
+func blockMatchScore(prefixLower, blockIDLower string) int {
 	if prefixLower == "" {
 		return 1
 	}
-	return hasPrefixOrContains(prefixLower, blockID)
+	return matchLevel(prefixLower, blockIDLower)
 }
 
-func hasPrefixOrContains(prefixLower, candidate string) int {
-	candidateLower := strings.ToLower(candidate)
+func matchLevel(prefixLower, candidateLower string) int {
 	if strings.HasPrefix(candidateLower, prefixLower) {
 		return 2
 	}

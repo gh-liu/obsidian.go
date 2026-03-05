@@ -24,7 +24,8 @@ func completeBlocks(idx *index.Index, currentRel string, wikiCtx *wikiLinkContex
 		if b == nil {
 			continue
 		}
-		score := blockMatchScore(prefixLower, b.ID)
+		blockIDLower := strings.ToLower(b.ID)
+		score := blockMatchScore(prefixLower, blockIDLower)
 		if score == 0 {
 			continue
 		}
