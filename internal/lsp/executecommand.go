@@ -18,6 +18,7 @@ const (
 	cmdNewFromTemplate = "obsidian.newFromTemplate"
 	cmdInsertTemplate  = "obsidian.insertTemplate"
 	cmdListTemplates   = "obsidian.listTemplates"
+	cmdCreateNote      = "obsidian.createNote"
 )
 
 // ExecuteCommand handles workspace/executeCommand for obsidian.new, obsidian.newFromTemplate, obsidian.insertTemplate.
@@ -37,6 +38,8 @@ func (h *Handler) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCo
 		return h.executeInsertTemplate(ctx, templateDir, params.Arguments)
 	case cmdListTemplates:
 		return h.executeListTemplates(templateDir)
+	case cmdCreateNote:
+		return h.executeCreateNote(ctx, root, templateDir, params.Arguments)
 	default:
 		return nil, fmt.Errorf("unknown command: %s", params.Command)
 	}
@@ -159,6 +162,15 @@ func (h *Handler) executeListTemplates(templateDir string) (any, error) {
 		names = []string{}
 	}
 	return map[string]any{"templates": names}, nil
+}
+
+func (h *Handler) executeCreateNote(ctx context.Context, root, templateDir string, args []any) (any, error) {
+	targetPath := extractString(args, 0)
+	if targetPath == "" {
+		return nil, fmt.Errorf("obsidian.createNote requires target name as first argument")
+	}
+	targetPath = ensureMdExt(targetPath)
+	return h.createNoteFromTemplate(ctx, root, templateDir, template.DefaultName, targetPath)
 }
 
 func extractPosition(args []any, i int) *protocol.Position {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
 	"github.com/gh-liu/obsidian.go/internal/lsp/format"
@@ -26,6 +27,8 @@ type Handler struct {
 	settings         *Settings
 	index            *index.Index
 	positionEncoding string // "utf-8" or "utf-16", from LSP client
+	openFilesMu      sync.RWMutex
+	openFiles        map[string]struct{}
 }
 
 // NewHandler creates the LSP handler. Vault root is resolved from Initialize params.
@@ -36,6 +39,7 @@ func NewHandler(ctx context.Context, conn jsonrpc2.Conn, server protocol.Server,
 		log:      logger,
 		settings: &Settings{},
 		index:    nil, // set after Initialize
+		openFiles: make(map[string]struct{}),
 	}
 	return h, ctx, nil
 }
@@ -66,8 +70,10 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"[", "#"},
 			},
+			CodeActionProvider:      true,
+			WorkspaceSymbolProvider: true,
 			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
-				Commands: []string{cmdNew, cmdNewFromTemplate, cmdInsertTemplate, cmdListTemplates},
+				Commands: []string{cmdNew, cmdNewFromTemplate, cmdInsertTemplate, cmdListTemplates, cmdCreateNote},
 			},
 		},
 		ServerInfo: &protocol.ServerInfo{
@@ -111,6 +117,21 @@ func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionPar
 		return nil, nil
 	}
 	return completion.ResolveCompletion(ctx, h.index, rel, h.positionEncoding, params)
+}
+
+// CodeAction returns quick fixes for diagnostics.
+func (h *Handler) CodeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
+	if h.index == nil {
+		return nil, nil
+	}
+	if params == nil {
+		return nil, nil
+	}
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	return ResolveCodeAction(ctx, h.index, rel, h.positionEncoding, params)
 }
 
 // Formatting handles textDocument/formatting. Runs format ops in sequence and assembles TextEdits.
@@ -164,6 +185,17 @@ func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentS
 	return out, nil
 }
 
+// Symbols returns workspace symbols for notes/headings/tag query.
+func (h *Handler) Symbols(ctx context.Context, params *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
+	if h.index == nil {
+		return nil, nil
+	}
+	if params == nil {
+		return nil, nil
+	}
+	return ResolveWorkspaceSymbol(ctx, h.index, h.positionEncoding, params)
+}
+
 // extractPositionEncoding reads position encoding from LSP InitializeParams.
 // Supports capabilities.general.positionEncodings and InitializationOptions.positionEncoding.
 func extractPositionEncoding(params *protocol.InitializeParams) string {
@@ -211,6 +243,8 @@ func (h *Handler) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocum
 	if err := h.index.SetContent(rel, []byte(params.TextDocument.Text)); err != nil {
 		h.log.Debug("index set content failed", "path", rel, "err", err)
 	}
+	h.trackOpenFile(rel)
+	go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(params.TextDocument.Text))
 	return nil
 }
 
@@ -229,9 +263,11 @@ func (h *Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextD
 	// Full sync: single change with omitted range (zero value)
 	r := params.ContentChanges[0].Range
 	if len(params.ContentChanges) == 1 && r.Start.Line == 0 && r.Start.Character == 0 && r.End.Line == 0 && r.End.Character == 0 {
+		newContent := params.ContentChanges[0].Text
 		if err := h.index.SetContent(rel, []byte(params.ContentChanges[0].Text)); err != nil {
 			h.log.Debug("index set content failed", "path", rel, "err", err)
 		}
+		go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(newContent))
 		return nil
 	}
 	// Incremental: apply changes to existing content
@@ -244,6 +280,7 @@ func (h *Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextD
 	if err := h.index.SetContent(rel, []byte(newContent)); err != nil {
 		h.log.Debug("index set content failed", "path", rel, "err", err)
 	}
+	go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(newContent))
 	return nil
 }
 
@@ -257,6 +294,8 @@ func (h *Handler) DidClose(ctx context.Context, params *protocol.DidCloseTextDoc
 		return nil
 	}
 	h.index.ClearContent(rel)
+	h.untrackOpenFile(rel)
+	clearDiagnostics(ctx, h.conn, h.index, rel)
 	return nil
 }
 
@@ -318,6 +357,7 @@ func (h *Handler) DidChangeWatchedFiles(ctx context.Context, params *protocol.Di
 			h.log.Debug("removed", "path", rel)
 		}
 	}
+	h.rediagnoseOpenFiles(ctx)
 	return nil
 }
 
@@ -429,6 +469,41 @@ func toStrings(v []any) []string {
 		}
 	}
 	return out
+}
+
+func (h *Handler) trackOpenFile(rel string) {
+	h.openFilesMu.Lock()
+	defer h.openFilesMu.Unlock()
+	h.openFiles[rel] = struct{}{}
+}
+
+func (h *Handler) untrackOpenFile(rel string) {
+	h.openFilesMu.Lock()
+	defer h.openFilesMu.Unlock()
+	delete(h.openFiles, rel)
+}
+
+func (h *Handler) openFilesSnapshot() []string {
+	h.openFilesMu.RLock()
+	defer h.openFilesMu.RUnlock()
+	out := make([]string, 0, len(h.openFiles))
+	for p := range h.openFiles {
+		out = append(out, p)
+	}
+	return out
+}
+
+func (h *Handler) rediagnoseOpenFiles(ctx context.Context) {
+	if h.index == nil {
+		return
+	}
+	for _, rel := range h.openFilesSnapshot() {
+		content, err := h.index.GetContent(rel)
+		if err != nil {
+			continue
+		}
+		go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(content))
+	}
 }
 
 // uriToRelPath converts document URI to path relative to root. Returns empty if outside root.
