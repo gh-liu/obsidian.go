@@ -23,6 +23,7 @@ func TestParse(t *testing.T) {
 			name: "frontmatter only",
 			content: `---
 id: abc-123
+title: My Note
 aliases: [foo, bar]
 tags: [tag1, tag2]
 ---
@@ -32,6 +33,7 @@ tags: [tag1, tag2]
 			want: &Doc{
 				Path:    "x.md",
 				ID:      "abc-123",
+				Title:   "My Note",
 				Aliases: []string{"foo", "bar"},
 				Tags:    []string{"tag1", "tag2"},
 			},
@@ -190,6 +192,7 @@ Another line ^block_99`,
 			name: "full document",
 			content: `---
 id: doc-1
+title: Doc Title
 aliases: [a1, a2]
 tags: [t1]
 ---
@@ -201,14 +204,15 @@ See [[other]] and #inline-tag
 			want: &Doc{
 				Path:    "full.md",
 				ID:      "doc-1",
+				Title:   "Doc Title",
 				Aliases: []string{"a1", "a2"},
 				Tags:    []string{"t1"},
 				Headings: []*Heading{
-					{Level: 1, Text: "Title", Range: Range{Start: Pos{5, 0}, End: Pos{5, 7}}},
-					{Level: 2, Text: "Section", Range: Range{Start: Pos{7, 0}, End: Pos{7, 10}}},
+					{Level: 1, Text: "Title", Range: Range{Start: Pos{6, 0}, End: Pos{6, 7}}},
+					{Level: 2, Text: "Section", Range: Range{Start: Pos{8, 0}, End: Pos{8, 10}}},
 				},
 				Links: []*Link{
-					{Kind: LinkWiki, Target: "other", Range: Range{Start: Pos{6, 4}, End: Pos{6, 13}}},
+					{Kind: LinkWiki, Target: "other", Range: Range{Start: Pos{7, 4}, End: Pos{7, 13}}},
 				},
 			},
 		},

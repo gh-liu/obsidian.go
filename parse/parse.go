@@ -24,6 +24,7 @@ type Doc struct {
 	Path string
 
 	ID        string
+	Title     string
 	Tags      []string
 	Aliases   []string
 	CreatedAt time.Time
@@ -66,6 +67,7 @@ func splitFrontmatter(content []byte) (frontmatter, body []byte) {
 func parseFrontmatter(raw []byte, doc *Doc) {
 	var flexible struct {
 		ID        string      `yaml:"id"`
+		Title     string      `yaml:"title"`
 		Aliases   yamlAliases `yaml:"aliases"`
 		Tags      yamlTags    `yaml:"tags"`
 		CreatedAt yamlTime    `yaml:"createdAt"`
@@ -75,6 +77,7 @@ func parseFrontmatter(raw []byte, doc *Doc) {
 		return
 	}
 	doc.ID = flexible.ID
+	doc.Title = strings.TrimSpace(flexible.Title)
 	doc.Aliases = flexible.Aliases.Values()
 	doc.Tags = append(doc.Tags, flexible.Tags.Values()...)
 	doc.CreatedAt = flexible.CreatedAt.t

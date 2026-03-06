@@ -415,6 +415,80 @@ id: note-a
 	}
 }
 
+func TestResolveCompletion_AliasUsesFrontmatterTitle(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "a.md", `---
+id: note-a
+title: Alpha Title
+aliases: [NoteAlpha]
+---
+# A`)
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	setOpenContent(t, idx, "note.md", "[[note-a|")
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 0, Character: 9},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("expected alias completions for [[note-a|")
+	}
+	got := collectLabels(list)
+	want := []string{"a", "Alpha Title", "NoteAlpha"}
+	if len(got) != len(want) {
+		t.Fatalf("want labels %v, got %v", want, got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("label[%d]: want %q, got %q (full: %v)", i, w, got[i], got)
+		}
+	}
+	// Verify the first item has a valid TextEdit.
+	item := list.Items[0]
+	if item.TextEdit == nil || item.TextEdit.NewText != item.Label {
+		t.Fatalf("want TextEdit.NewText=%s, got %+v", item.Label, item.TextEdit)
+	}
+}
+
+func TestResolveCompletion_AliasUsesHeadingName(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "target.md", `---
+id: target-id
+title: Target Title
+---
+# Root
+## g 定义`)
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+	setOpenContent(t, idx, "note.md", "[[target-id#g 定义|")
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 0, Character: 21},
+		},
+	}
+	list, err := ResolveCompletion(context.Background(), idx, "note.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("expected alias completions for [[target-id#g 定义|")
+	}
+	if got := collectLabels(list); len(got) != 1 || got[0] != "g 定义" {
+		t.Fatalf("want only heading alias completion, got %v", got)
+	}
+}
+
 func TestResolveCompletion_CurrentFileBlocks(t *testing.T) {
 	dir := t.TempDir()
 	writeRefFile(t, dir, "note.md", "line one ^alpha\nline two ^beta\n[[#^")

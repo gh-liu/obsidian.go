@@ -9,7 +9,9 @@ type WikiLinkCursorContext struct {
 	Prefix        string
 	CompleteFiles bool
 	CompleteBlock bool
+	CompleteAlias bool
 	TargetPath    string
+	TargetAnchor  string
 }
 
 // ParseWikiLinkCursorContext parses the wiki-link context at byteOff in line.
@@ -38,8 +40,24 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 	}
 
 	inner := beforeCursor[open:byteOff]
-	if strings.Contains(inner, "|") {
-		return nil
+	if rawTargetPart, aliasPrefix, ok := strings.Cut(inner, "|"); ok {
+		targetPart := strings.TrimSpace(rawTargetPart)
+		ctx := &WikiLinkCursorContext{
+			StartByte:     open + len(rawTargetPart) + 1,
+			Prefix:        aliasPrefix,
+			CompleteFiles: false,
+			CompleteBlock: false,
+			CompleteAlias: true,
+			TargetPath:    strings.TrimSpace(targetPart),
+		}
+		if idx := strings.LastIndex(targetPart, "#"); idx >= 0 {
+			ctx.TargetPath = strings.TrimSpace(targetPart[:idx])
+			ctx.TargetAnchor = targetPart[idx+1:]
+			if _, ok := strings.CutPrefix(ctx.TargetAnchor, "^"); ok {
+				return nil
+			}
+		}
+		return ctx
 	}
 	if after, ok := strings.CutPrefix(inner, "#"); ok {
 		if blockPrefix, ok := strings.CutPrefix(after, "^"); ok {
@@ -48,7 +66,9 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 				Prefix:        blockPrefix,
 				CompleteFiles: false,
 				CompleteBlock: true,
+				CompleteAlias: false,
 				TargetPath:    "",
+				TargetAnchor:  "",
 			}
 		}
 		prefix := after
@@ -61,7 +81,9 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 				Prefix:        prefix,
 				CompleteFiles: false,
 				CompleteBlock: false,
+				CompleteAlias: false,
 				TargetPath:    "",
+				TargetAnchor:  "",
 			}
 		}
 		return &WikiLinkCursorContext{
@@ -69,7 +91,9 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 			Prefix:        prefix,
 			CompleteFiles: false,
 			CompleteBlock: false,
+			CompleteAlias: false,
 			TargetPath:    "",
+			TargetAnchor:  "",
 		}
 	}
 	if idx := strings.LastIndex(inner, "#"); idx >= 0 {
@@ -87,7 +111,9 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 			Prefix:        prefix,
 			CompleteFiles: false,
 			CompleteBlock: completeBlock,
+			CompleteAlias: false,
 			TargetPath:    targetPath,
+			TargetAnchor:  "",
 		}
 	}
 	return &WikiLinkCursorContext{
@@ -95,6 +121,8 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 		Prefix:        inner,
 		CompleteFiles: true,
 		CompleteBlock: false,
+		CompleteAlias: false,
 		TargetPath:    "",
+		TargetAnchor:  "",
 	}
 }
