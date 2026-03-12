@@ -19,7 +19,10 @@ const (
 	cmdInsertTemplate  = "obsidian.insertTemplate"
 	cmdListTemplates   = "obsidian.listTemplates"
 	cmdCreateNote      = "obsidian.createNote"
+	cmdShowReferences  = "obsidian.showReferences"
 )
+
+const showReferencesTimeout = 2 * time.Second
 
 // ExecuteCommand handles workspace/executeCommand for obsidian.new, obsidian.newFromTemplate, obsidian.insertTemplate.
 func (h *Handler) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
@@ -40,6 +43,8 @@ func (h *Handler) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCo
 		return h.executeListTemplates(templateDir)
 	case cmdCreateNote:
 		return h.executeCreateNote(ctx, root, templateDir, params.Arguments)
+	case cmdShowReferences:
+		return h.executeShowReferences(ctx, params.Arguments)
 	default:
 		return nil, fmt.Errorf("unknown command: %s", params.Command)
 	}
@@ -173,6 +178,48 @@ func (h *Handler) executeCreateNote(ctx context.Context, root, templateDir strin
 	return h.createNoteFromTemplate(ctx, root, templateDir, template.DefaultName, targetPath)
 }
 
+func (h *Handler) executeShowReferences(ctx context.Context, args []any) (any, error) {
+	refs := extractLocations(args, 2)
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("obsidian.showReferences requires locations as third argument")
+	}
+	first := refs[0]
+	if h.conn != nil {
+		go h.showReferencesAsync(first, len(refs))
+	}
+	return map[string]any{
+		"shown": first.URI,
+		"count": len(refs),
+	}, nil
+}
+
+func (h *Handler) showReferencesAsync(first protocol.Location, total int) {
+	if h == nil || h.conn == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), showReferencesTimeout)
+	defer cancel()
+
+	params := &protocol.ShowDocumentParams{
+		URI:       uri.URI(first.URI),
+		TakeFocus: true,
+		Selection: &first.Range,
+	}
+	var result protocol.ShowDocumentResult
+	if _, err := h.conn.Call(ctx, protocol.MethodShowDocument, params, &result); err != nil {
+		h.log.Debug("show document failed", "uri", first.URI, "err", err)
+		return
+	}
+	if total > 1 {
+		if err := h.conn.Notify(ctx, protocol.MethodWindowShowMessage, &protocol.ShowMessageParams{
+			Type:    protocol.MessageTypeInfo,
+			Message: fmt.Sprintf("%d references found; opened the first result", total),
+		}); err != nil {
+			h.log.Debug("show references message failed", "count", total, "err", err)
+		}
+	}
+}
+
 func extractPosition(args []any, i int) *protocol.Position {
 	if i >= len(args) {
 		return nil
@@ -203,6 +250,54 @@ func extractString(args []any, i int) string {
 	}
 	s, _ := args[i].(string)
 	return s
+}
+
+func extractLocations(args []any, i int) []protocol.Location {
+	if i >= len(args) {
+		return nil
+	}
+	raw, ok := args[i].([]any)
+	if !ok {
+		return nil
+	}
+	locs := make([]protocol.Location, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		uriValue, _ := m["uri"].(string)
+		rangeValue, ok := m["range"].(map[string]any)
+		if !ok || uriValue == "" {
+			continue
+		}
+		start := extractRangePosition(rangeValue, "start")
+		end := extractRangePosition(rangeValue, "end")
+		if start == nil || end == nil {
+			continue
+		}
+		locs = append(locs, protocol.Location{
+			URI: protocol.DocumentURI(uriValue),
+			Range: protocol.Range{
+				Start: *start,
+				End:   *end,
+			},
+		})
+	}
+	return locs
+}
+
+func extractRangePosition(m map[string]any, key string) *protocol.Position {
+	child, ok := m[key].(map[string]any)
+	if !ok {
+		return nil
+	}
+	line, okLine := toUint32(child["line"])
+	char, okChar := toUint32(child["character"])
+	if !okLine || !okChar {
+		return nil
+	}
+	return &protocol.Position{Line: line, Character: char}
 }
 
 func ensureMdExt(path string) string {

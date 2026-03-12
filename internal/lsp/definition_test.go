@@ -47,3 +47,38 @@ See [[#迭代、递归]] for details.
 		t.Errorf("want line 4 (## 迭代、递归), got line %d", loc.Range.Start.Line)
 	}
 }
+
+func TestResolveDefinition_DuplicateHeadingSlug(t *testing.T) {
+	dir := t.TempDir()
+	content := `# Overview
+
+## Intro
+
+## Intro
+
+See [[#intro-1]] for details.
+`
+	writeRefFile(t, dir, "note.md", content)
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	params := &protocol.DefinitionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "note.md"))},
+			Position:     protocol.Position{Line: 6, Character: 8},
+		},
+	}
+	locs, err := ResolveDefinition(context.Background(), idx, "note.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveDefinition: %v", err)
+	}
+	if len(locs) != 1 {
+		t.Fatalf("want 1 location, got %d", len(locs))
+	}
+	if locs[0].Range.Start.Line != 4 {
+		t.Fatalf("want line 4 for second Intro heading, got %d", locs[0].Range.Start.Line)
+	}
+}

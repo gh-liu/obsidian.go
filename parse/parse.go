@@ -25,6 +25,7 @@ type Doc struct {
 
 	ID        string
 	Title     string
+	IDRange   *Range
 	Tags      []string
 	Aliases   []string
 	CreatedAt time.Time
@@ -44,7 +45,7 @@ func Parse(content []byte, path string) (*Doc, error) {
 	fm, body := splitFrontmatter(content)
 	bodyStartLine := 0
 	if fm != nil {
-		parseFrontmatter(fm, doc)
+		parseFrontmatter(fm, doc, 1)
 		bodyStartLine = strings.Count(string(content[:len(content)-len(body)]), "\n")
 	}
 	parseBody(body, bodyStartLine, doc)
@@ -64,7 +65,7 @@ func splitFrontmatter(content []byte) (frontmatter, body []byte) {
 	return []byte(before), []byte(after)
 }
 
-func parseFrontmatter(raw []byte, doc *Doc) {
+func parseFrontmatter(raw []byte, doc *Doc, startLine int) {
 	var flexible struct {
 		ID        string      `yaml:"id"`
 		Title     string      `yaml:"title"`
@@ -82,6 +83,20 @@ func parseFrontmatter(raw []byte, doc *Doc) {
 	doc.Tags = append(doc.Tags, flexible.Tags.Values()...)
 	doc.CreatedAt = flexible.CreatedAt.t
 	doc.UpdatedAt = flexible.UpdatedAt.t
+	if doc.ID != "" {
+		lines := strings.Split(string(raw), "\n")
+		for i, line := range lines {
+			key, _, ok := strings.Cut(line, ":")
+			if !ok || strings.TrimSpace(key) != "id" {
+				continue
+			}
+			doc.IDRange = &Range{
+				Start: Pos{Line: startLine + i, Character: 0},
+				End:   Pos{Line: startLine + i, Character: len(line)},
+			}
+			break
+		}
+	}
 }
 
 func parseBody(content []byte, bodyStartLine int, doc *Doc) {

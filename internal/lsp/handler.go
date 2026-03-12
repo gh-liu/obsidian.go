@@ -34,11 +34,11 @@ type Handler struct {
 // NewHandler creates the LSP handler. Vault root is resolved from Initialize params.
 func NewHandler(ctx context.Context, conn jsonrpc2.Conn, server protocol.Server, logger *slog.Logger) (*Handler, context.Context, error) {
 	h := &Handler{
-		Server:   server,
-		conn:     conn,
-		log:      logger,
-		settings: &Settings{},
-		index:    nil, // set after Initialize
+		Server:    server,
+		conn:      conn,
+		log:       logger,
+		settings:  &Settings{},
+		index:     nil, // set after Initialize
 		openFiles: make(map[string]struct{}),
 	}
 	return h, ctx, nil
@@ -67,13 +67,14 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 			ReferencesProvider:         true,
 			DocumentSymbolProvider:     true,
 			DocumentFormattingProvider: true,
+			CodeLensProvider:           &protocol.CodeLensOptions{},
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"[", "#", "|"},
 			},
 			CodeActionProvider:      true,
 			WorkspaceSymbolProvider: true,
 			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
-				Commands: []string{cmdNew, cmdNewFromTemplate, cmdInsertTemplate, cmdListTemplates, cmdCreateNote},
+				Commands: []string{cmdNew, cmdNewFromTemplate, cmdInsertTemplate, cmdListTemplates, cmdCreateNote, cmdShowReferences},
 			},
 		},
 		ServerInfo: &protocol.ServerInfo{
@@ -117,6 +118,17 @@ func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionPar
 		return nil, nil
 	}
 	return completion.ResolveCompletion(ctx, h.index, rel, h.positionEncoding, params)
+}
+
+func (h *Handler) CodeLens(ctx context.Context, params *protocol.CodeLensParams) ([]protocol.CodeLens, error) {
+	if h.index == nil || params == nil {
+		return nil, nil
+	}
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	return ResolveCodeLens(ctx, h.index, rel, h.positionEncoding, params)
 }
 
 // CodeAction returns quick fixes for diagnostics.

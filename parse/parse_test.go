@@ -34,6 +34,7 @@ tags: [tag1, tag2]
 				Path:    "x.md",
 				ID:      "abc-123",
 				Title:   "My Note",
+				IDRange: &Range{Start: Pos{1, 0}, End: Pos{1, 11}},
 				Aliases: []string{"foo", "bar"},
 				Tags:    []string{"tag1", "tag2"},
 			},
@@ -64,6 +65,7 @@ updatedAt: 2026-02-28 18:38:25
 			want: &Doc{
 				Path:      "time.md",
 				ID:        "time-doc",
+				IDRange:   &Range{Start: Pos{1, 0}, End: Pos{1, 12}},
 				CreatedAt: time.Date(2026, 2, 5, 0, 0, 0, 0, time.Local),
 				UpdatedAt: time.Date(2026, 2, 28, 18, 38, 25, 0, time.Local),
 			},
@@ -205,6 +207,7 @@ See [[other]] and #inline-tag
 				Path:    "full.md",
 				ID:      "doc-1",
 				Title:   "Doc Title",
+				IDRange: &Range{Start: Pos{1, 0}, End: Pos{1, 9}},
 				Aliases: []string{"a1", "a2"},
 				Tags:    []string{"t1"},
 				Headings: []*Heading{

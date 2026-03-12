@@ -4,7 +4,6 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
-	"unicode"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
 	"github.com/gh-liu/obsidian.go/internal/lsp/position"
@@ -126,39 +125,6 @@ func targetLocationBlock(idx *index.Index, targetPath, blockID string, enc posit
 		}
 	}
 	return protocol.Location{URI: uri, Range: rng}
-}
-
-func findHeading(doc *parse.Doc, anchor string) *parse.Heading {
-	norm := normalizeHeadingAnchor(anchor)
-	for _, h := range doc.Headings {
-		if h == nil {
-			continue
-		}
-		if strings.EqualFold(anchor, h.Text) {
-			return h
-		}
-		// Normalized match only when norm is non-empty; otherwise all-CJK headings
-		// would normalize to "" and incorrectly match the first heading.
-		if norm != "" && normalizeHeadingAnchor(h.Text) == norm {
-			return h
-		}
-	}
-	return nil
-}
-
-func normalizeHeadingAnchor(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.ReplaceAll(s, " ", "-")
-	s = strings.ReplaceAll(s, "\t", "-")
-	var b strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			b.WriteRune(r)
-		} else if unicode.IsLetter(r) {
-			b.WriteRune(r)
-		}
-	}
-	return strings.Trim(b.String(), "-")
 }
 
 func rangeToProtocol(idx *index.Index, relPath string, r parse.Range, enc position.Encoder) protocol.Range {

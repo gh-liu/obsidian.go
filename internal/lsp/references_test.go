@@ -129,6 +129,91 @@ func TestResolveReferences_IncludeHeadingLinks(t *testing.T) {
 	}
 }
 
+func TestResolveReferences_HeadingBacklinks(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "a.md", `# A
+## Go Memory Model
+`)
+	writeRefFile(t, dir, "b.md", `[[a#go memory model]]
+[[#Go Memory Model]]
+`)
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	params := &protocol.ReferenceParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "a.md"))},
+			Position:     protocol.Position{Line: 1, Character: 5},
+		},
+		Context: protocol.ReferenceContext{IncludeDeclaration: false},
+	}
+	locs, err := ResolveReferences(context.Background(), idx, "a.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveReferences: %v", err)
+	}
+	if len(locs) != 1 {
+		t.Fatalf("want 1 cross-note heading ref, got %d", len(locs))
+	}
+	if got := filepath.Base(locs[0].URI.Filename()); got != "b.md" {
+		t.Fatalf("want ref in b.md, got %s", got)
+	}
+
+	if err := idx.SetContent("a.md", []byte(`# A
+## Go Memory Model
+
+See [[#go memory model]]
+`)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("a.md")
+
+	params.Context.IncludeDeclaration = true
+	locs, err = ResolveReferences(context.Background(), idx, "a.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveReferences with declaration: %v", err)
+	}
+	if len(locs) != 3 {
+		t.Fatalf("want 3 refs including declaration, got %d", len(locs))
+	}
+}
+
+func TestResolveReferences_HeadingBacklinks_DuplicateAnchors(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "a.md", `# A
+## Intro
+## Intro
+`)
+	writeRefFile(t, dir, "b.md", `[[a#intro]]
+[[a#intro-1]]
+`)
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	params := &protocol.ReferenceParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.File(filepath.Join(dir, "a.md"))},
+			Position:     protocol.Position{Line: 2, Character: 5},
+		},
+		Context: protocol.ReferenceContext{IncludeDeclaration: false},
+	}
+	locs, err := ResolveReferences(context.Background(), idx, "a.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveReferences: %v", err)
+	}
+	if len(locs) != 1 {
+		t.Fatalf("want 1 ref for second duplicate heading, got %d", len(locs))
+	}
+	if locs[0].Range.Start.Line != 1 {
+		t.Fatalf("want second link line 1, got %d", locs[0].Range.Start.Line)
+	}
+}
+
 func TestResolveReferences_FileNotInIndex(t *testing.T) {
 	dir := t.TempDir()
 	writeRefFile(t, dir, "a.md", `# A`)
