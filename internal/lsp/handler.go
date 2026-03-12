@@ -391,6 +391,27 @@ func (h *Handler) Initialized(ctx context.Context, params *protocol.InitializedP
 	return nil
 }
 
+// Shutdown acknowledges the client's shutdown request.
+// It must not delegate to the embedded protocol.Server, otherwise the request
+// is forwarded back to the client and the connection deadlocks.
+func (h *Handler) Shutdown(ctx context.Context) error {
+	if h.log != nil {
+		h.log.Debug("shutdown requested")
+	}
+	return nil
+}
+
+// Exit closes the JSON-RPC connection so StartServer can unblock on conn.Done().
+func (h *Handler) Exit(ctx context.Context) error {
+	if h.log != nil {
+		h.log.Debug("exit requested")
+	}
+	if h.conn == nil {
+		return nil
+	}
+	return h.conn.Close()
+}
+
 func (h *Handler) resolveVaultRoot(params *protocol.InitializeParams) string {
 	if len(params.WorkspaceFolders) > 0 {
 		return uri.URI(params.WorkspaceFolders[0].URI).Filename()
