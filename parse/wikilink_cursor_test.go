@@ -27,6 +27,7 @@ func TestParseWikiLinkCursorContext(t *testing.T) {
 		{name: "cross-file block", line: "[[path#^blk", byteOff: 11, wantNil: false, want: &WikiLinkCursorContext{StartByte: 8, Prefix: "blk", CompleteFiles: false, CompleteBlock: true, TargetPath: "path"}},
 		{name: "cross-file with spaces", line: "[[ path # sub", byteOff: 14, wantNil: false, want: &WikiLinkCursorContext{StartByte: 9, Prefix: " sub", CompleteFiles: false, CompleteBlock: false, TargetPath: "path"}},
 		{name: "alias area file completion", line: "[[file|alias", byteOff: 12, wantNil: false, want: &WikiLinkCursorContext{StartByte: 7, Prefix: "alias", CompleteFiles: false, CompleteBlock: false, CompleteAlias: true, TargetPath: "file", TargetAnchor: ""}},
+		{name: "alias area escaped separator", line: "[[file\\|alias", byteOff: 13, wantNil: false, want: &WikiLinkCursorContext{StartByte: 8, Prefix: "alias", CompleteFiles: false, CompleteBlock: false, CompleteAlias: true, TargetPath: "file", TargetAnchor: ""}},
 		{name: "alias area heading completion", line: "[[file#head|alias", byteOff: 17, wantNil: false, want: &WikiLinkCursorContext{StartByte: 12, Prefix: "alias", CompleteFiles: false, CompleteBlock: false, CompleteAlias: true, TargetPath: "file", TargetAnchor: "head"}},
 		{name: "alias area block still ignored", line: "[[file#^blk|alias", byteOff: 17, wantNil: true},
 		{name: "second link on line", line: "[[a]] and [[b", byteOff: 16, wantNil: false, want: &WikiLinkCursorContext{StartByte: 12, Prefix: "b", CompleteFiles: true, CompleteBlock: false, TargetPath: ""}},

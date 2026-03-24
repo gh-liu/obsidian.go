@@ -40,19 +40,19 @@ func ParseWikiLinkCursorContext(line string, byteOff int) *WikiLinkCursorContext
 	}
 
 	inner := beforeCursor[open:byteOff]
-	if rawTargetPart, aliasPrefix, ok := strings.Cut(inner, "|"); ok {
-		targetPart := strings.TrimSpace(rawTargetPart)
+	if rawTargetPart, aliasPrefix, ok, sepByte := splitWikiAlias(inner); ok {
+		targetPart := strings.TrimSpace(unescapeWikiPipes(rawTargetPart))
 		ctx := &WikiLinkCursorContext{
-			StartByte:     open + len(rawTargetPart) + 1,
-			Prefix:        aliasPrefix,
+			StartByte:     open + sepByte + 1,
+			Prefix:        unescapeWikiPipes(aliasPrefix),
 			CompleteFiles: false,
 			CompleteBlock: false,
 			CompleteAlias: true,
-			TargetPath:    strings.TrimSpace(targetPart),
+			TargetPath:    targetPart,
 		}
 		if idx := strings.LastIndex(targetPart, "#"); idx >= 0 {
 			ctx.TargetPath = strings.TrimSpace(targetPart[:idx])
-			ctx.TargetAnchor = targetPart[idx+1:]
+			ctx.TargetAnchor = strings.TrimSpace(unescapeWikiPipes(targetPart[idx+1:]))
 			if _, ok := strings.CutPrefix(ctx.TargetAnchor, "^"); ok {
 				return nil
 			}

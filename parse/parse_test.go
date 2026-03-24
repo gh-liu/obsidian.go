@@ -100,6 +100,17 @@ updatedAt: 2026-02-28 18:38:25
 			},
 		},
 		{
+			name:    "wiki link alias escaped pipe",
+			content: `| [[1774318604-FUEZ\|Test-Driven Development: By Example]] |`,
+			path:    "table.md",
+			want: &Doc{
+				Path: "table.md",
+				Links: []*Link{
+					{Kind: LinkWiki, Target: "1774318604-FUEZ", Alias: "Test-Driven Development: By Example", Range: Range{Start: Pos{0, 2}, End: Pos{0, 58}}},
+				},
+			},
+		},
+		{
 			name:    "wiki link same-note heading",
 			content: `Jump to [[#Section title]]`,
 			path:    "same.md",

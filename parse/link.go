@@ -26,21 +26,29 @@ type Link struct {
 	Range    Range
 }
 
-// Wiki link: [[file]], [[file|alias]], [[file#heading]], [[file#^block-id]], [[#heading]] (same-note)
-// Target can be empty for [[#heading]]; anchor [^\]|]+ stops before | so alias parses correctly
-var reWikiLink = regexp.MustCompile(`\[\[([^\]|#]*)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]`)
 var reMDLink = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
 
 func parseLinks(line string, lineIdx int) (links []*Link) {
-	for _, m := range reWikiLink.FindAllStringSubmatchIndex(line, -1) {
-		targetID := line[m[2]:m[3]]
-		anchorID, alias := "", ""
-		if m[4] >= 0 {
-			anchorID = line[m[4]:m[5]]
+	for start := 0; start < len(line)-1; start++ {
+		if line[start] != '[' || line[start+1] != '[' {
+			continue
 		}
-		if m[6] >= 0 {
-			alias = line[m[6]:m[7]]
+		end := -1
+		for i := start + 2; i < len(line)-1; i++ {
+			if line[i] == '\\' && i+1 < len(line) {
+				i++
+				continue
+			}
+			if line[i] == ']' && line[i+1] == ']' {
+				end = i
+				break
+			}
 		}
+		if end < 0 {
+			continue
+		}
+
+		targetID, anchorID, alias := parseWikiLinkParts(line[start+2 : end])
 		anchor := ""
 		blockRef := ""
 		if anchorID != "" {
@@ -57,10 +65,11 @@ func parseLinks(line string, lineIdx int) (links []*Link) {
 			BlockRef: blockRef,
 			Alias:    alias,
 			Range: Range{
-				Start: Pos{Line: lineIdx, Character: m[0]},
-				End:   Pos{Line: lineIdx, Character: m[1]},
+				Start: Pos{Line: lineIdx, Character: start},
+				End:   Pos{Line: lineIdx, Character: end + 2},
 			},
 		})
+		start = end + 1
 	}
 	for _, m := range reMDLink.FindAllStringSubmatchIndex(line, -1) {
 		targetID := line[m[4]:m[5]]

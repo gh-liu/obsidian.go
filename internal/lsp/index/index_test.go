@@ -153,6 +153,27 @@ func TestResolveLinkTargetToPath_BasenameIndex(t *testing.T) {
 	}
 }
 
+func TestResolveLinkTargetToPath_OpenContentIDBeforeReparse(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "target.md", `# Target`)
+
+	idx := New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	if err := idx.SetContent("target.md", []byte(`---
+id: live-id
+---
+# Target`)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+
+	if got := idx.ResolveLinkTargetToPath("live-id"); got != "target.md" {
+		t.Fatalf("ResolveLinkTargetToPath(live-id): want target.md, got %q", got)
+	}
+}
+
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	p := path.Join(dir, name)

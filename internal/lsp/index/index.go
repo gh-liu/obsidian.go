@@ -25,15 +25,15 @@ import (
 type IgnoreFunc func(path string) bool
 
 type Index struct {
-	mu            sync.RWMutex
-	log           *slog.Logger
-	root          string
-	ignore        IgnoreFunc
-	byPath        map[string]*parse.Doc
-	byID          map[string]string // id → path (only when frontmatter has id)
-	byBasename    map[string][]string
-	contentByPath map[string]string // path → raw content for open files (unsaved)
-	debounceMu    sync.Mutex
+	mu             sync.RWMutex
+	log            *slog.Logger
+	root           string
+	ignore         IgnoreFunc
+	byPath         map[string]*parse.Doc
+	byID           map[string]string // id → path (only when frontmatter has id)
+	byBasename     map[string][]string
+	contentByPath  map[string]string // path → raw content for open files (unsaved)
+	debounceMu     sync.Mutex
 	debounceTimers map[string]*time.Timer
 }
 
@@ -54,13 +54,13 @@ func New(root string, log *slog.Logger, ignore IgnoreFunc) *Index {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Index{
-		root:          abs,
-		log:           log,
-		ignore:        ignore,
-		byPath:        make(map[string]*parse.Doc),
-		byID:          make(map[string]string),
-		byBasename:    make(map[string][]string),
-		contentByPath: make(map[string]string),
+		root:           abs,
+		log:            log,
+		ignore:         ignore,
+		byPath:         make(map[string]*parse.Doc),
+		byID:           make(map[string]string),
+		byBasename:     make(map[string][]string),
+		contentByPath:  make(map[string]string),
 		debounceTimers: make(map[string]*time.Timer),
 	}
 }
@@ -104,20 +104,20 @@ func (x *Index) IndexAll(ctx context.Context) error {
 			return gctx.Err()
 		default:
 			g.Go(func() error {
-			x.log.Info("index " + rel)
-			doc, err := x.indexFile(rel)
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			byPath[rel] = doc
-			if doc.ID != "" {
-				byID[doc.ID] = rel
-			}
-			baseKey := basenameKey(rel)
-			byBasename[baseKey] = append(byBasename[baseKey], rel)
-			mu.Unlock()
-			return nil
+				x.log.Info("index " + rel)
+				doc, err := x.indexFile(rel)
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				byPath[rel] = doc
+				if doc.ID != "" {
+					byID[doc.ID] = rel
+				}
+				baseKey := basenameKey(rel)
+				byBasename[baseKey] = append(byBasename[baseKey], rel)
+				mu.Unlock()
+				return nil
 			})
 		}
 	}
@@ -192,26 +192,31 @@ func (x *Index) GetByID(id string) string {
 // Returns empty string if not found.
 func (x *Index) ResolveLinkTargetToPath(target string) string {
 	x.mu.RLock()
-	defer x.mu.RUnlock()
 	if p := x.byID[target]; p != "" {
+		x.mu.RUnlock()
 		return p
 	}
 	if _, ok := x.byPath[target]; ok {
+		x.mu.RUnlock()
 		return target
 	}
 	if !strings.HasSuffix(strings.ToLower(target), ".md") {
 		if _, ok := x.byPath[target+".md"]; ok {
+			x.mu.RUnlock()
 			return target + ".md"
 		}
 	}
 	// Obsidian: link by basename when path not found (e.g. [[CS_GO++compiler]] for folder/CS_GO++compiler.md)
 	targetBase := basenameKey(target)
 	if targetBase == "" {
+		x.mu.RUnlock()
 		return ""
 	}
 	candidates := x.byBasename[targetBase]
 	if len(candidates) == 0 {
-		return ""
+		openContentByPath := maps.Clone(x.contentByPath)
+		x.mu.RUnlock()
+		return resolveOpenContentTarget(target, openContentByPath)
 	}
 	best := candidates[0]
 	for i := 1; i < len(candidates); i++ {
@@ -220,7 +225,21 @@ func (x *Index) ResolveLinkTargetToPath(target string) string {
 			best = p
 		}
 	}
+	x.mu.RUnlock()
 	return best
+}
+
+func resolveOpenContentTarget(target string, openContentByPath map[string]string) string {
+	for path, content := range openContentByPath {
+		doc, err := parse.Parse([]byte(content), path)
+		if err != nil || doc == nil {
+			continue
+		}
+		if doc.ID == target {
+			return path
+		}
+	}
+	return ""
 }
 
 func basenameKey(path string) string {
