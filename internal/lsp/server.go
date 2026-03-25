@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -27,8 +28,39 @@ func StartServer(logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	conn.Go(ctx, protocol.ServerHandler(handler, jsonrpc2.MethodNotFoundHandler))
+	conn.Go(ctx, serverHandlerWithInlayHint(handler))
 	<-conn.Done()
+}
+
+func serverHandlerWithInlayHint(handler *Handler) jsonrpc2.Handler {
+	base := protocol.ServerHandler(handler, jsonrpc2.MethodNotFoundHandler)
+	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+		switch req.Method() {
+		case protocol.MethodInitialize:
+			var params protocol.InitializeParams
+			if err := json.Unmarshal(req.Params(), &params); err != nil {
+				return reply(ctx, nil, err)
+			}
+			result, err := handler.Initialize(ctx, &params)
+			if err != nil {
+				return reply(ctx, nil, err)
+			}
+			raw, err := marshalInitializeResultWithInlayHint(result)
+			if err != nil {
+				return reply(ctx, nil, err)
+			}
+			return reply(ctx, raw, nil)
+		case methodTextDocumentInlayHint:
+			var params InlayHintParams
+			if err := json.Unmarshal(req.Params(), &params); err != nil {
+				return reply(ctx, nil, err)
+			}
+			result, err := handler.InlayHint(ctx, &params)
+			return reply(ctx, result, err)
+		default:
+			return base(ctx, reply, req)
+		}
+	}
 }
 
 type readWriteCloser struct {
