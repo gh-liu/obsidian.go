@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
 	"github.com/gh-liu/obsidian.go/internal/lsp/format"
@@ -29,7 +30,11 @@ type Handler struct {
 	positionEncoding string // "utf-8" or "utf-16", from LSP client
 	openFilesMu      sync.RWMutex
 	openFiles        map[string]struct{}
+	diagRefreshMu    sync.Mutex
+	diagRefreshTimer *time.Timer
 }
+
+const openDiagnosticsRefreshDelay = 120 * time.Millisecond
 
 // NewHandler creates the LSP handler. Vault root is resolved from Initialize params.
 func NewHandler(ctx context.Context, conn jsonrpc2.Conn, server protocol.Server, logger *slog.Logger) (*Handler, context.Context, error) {
@@ -257,6 +262,7 @@ func (h *Handler) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocum
 	}
 	h.trackOpenFile(rel)
 	go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(params.TextDocument.Text))
+	h.scheduleRediagnoseOpenFiles()
 	return nil
 }
 
@@ -280,6 +286,7 @@ func (h *Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextD
 			h.log.Debug("index set content failed", "path", rel, "err", err)
 		}
 		go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(newContent))
+		h.scheduleRediagnoseOpenFiles()
 		return nil
 	}
 	// Incremental: apply changes to existing content
@@ -293,6 +300,7 @@ func (h *Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextD
 		h.log.Debug("index set content failed", "path", rel, "err", err)
 	}
 	go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(newContent))
+	h.scheduleRediagnoseOpenFiles()
 	return nil
 }
 
@@ -308,6 +316,7 @@ func (h *Handler) DidClose(ctx context.Context, params *protocol.DidCloseTextDoc
 	h.index.ClearContent(rel)
 	h.untrackOpenFile(rel)
 	clearDiagnostics(ctx, h.conn, h.index, rel)
+	h.scheduleRediagnoseOpenFiles()
 	return nil
 }
 
@@ -386,7 +395,9 @@ func (h *Handler) Initialized(ctx context.Context, params *protocol.InitializedP
 		h.registerFileWatchers(ctx)
 		if err := h.index.IndexAll(ctx); err != nil {
 			h.log.Error("index all failed", "err", err)
+			return
 		}
+		h.rediagnoseOpenFiles(ctx)
 	}()
 	return nil
 }
@@ -537,6 +548,27 @@ func (h *Handler) rediagnoseOpenFiles(ctx context.Context) {
 		}
 		go diagnoseFile(ctx, h.conn, h.index, rel, h.positionEncoding, []byte(content))
 	}
+}
+
+func (h *Handler) scheduleRediagnoseOpenFiles() {
+	if h.index == nil {
+		return
+	}
+	h.diagRefreshMu.Lock()
+	if h.diagRefreshTimer != nil {
+		h.diagRefreshTimer.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(openDiagnosticsRefreshDelay, func() {
+		h.diagRefreshMu.Lock()
+		if h.diagRefreshTimer == timer {
+			h.diagRefreshTimer = nil
+		}
+		h.diagRefreshMu.Unlock()
+		h.rediagnoseOpenFiles(context.Background())
+	})
+	h.diagRefreshTimer = timer
+	h.diagRefreshMu.Unlock()
 }
 
 // uriToRelPath converts document URI to path relative to root. Returns empty if outside root.

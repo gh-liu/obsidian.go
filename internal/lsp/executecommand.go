@@ -99,6 +99,7 @@ func (h *Handler) createNoteFromTemplate(ctx context.Context, root, templateDir,
 	if err := h.index.Add(targetPath, []byte(content)); err != nil {
 		h.log.Debug("index add failed after create", "path", targetPath, "err", err)
 	}
+	h.rediagnoseOpenFiles(ctx)
 
 	h.log.Info("created note", "path", targetPath, "template", templateName)
 
