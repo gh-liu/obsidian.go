@@ -61,12 +61,16 @@ func ResolveInlayHint(ctx context.Context, idx *index.Index, relPath, encoding s
 			continue
 		}
 		line := lineAt(lines, link.Range.End.Line)
+		hintByte := link.Range.End.Character
+		if hintByte >= 2 {
+			hintByte -= 2
+		}
 		hints = append(hints, InlayHint{
 			Position: protocol.Position{
 				Line:      uint32(link.Range.End.Line),
-				Character: uint32(enc.ByteToChar(line, link.Range.End.Character)),
+				Character: uint32(enc.ByteToChar(line, hintByte)),
 			},
-			Label:       "-> " + label,
+			Label:       formatWikiLinkInlayHintLabel(label, link.Alias),
 			PaddingLeft: true,
 		})
 	}
@@ -116,6 +120,18 @@ func wikiLinkInlayLabel(idx *index.Index, sourcePath string, link *parse.Link) s
 	b.WriteByte('#')
 	b.WriteString(anchor)
 	return b.String()
+}
+
+func formatWikiLinkInlayHintLabel(label, alias string) string {
+	if normalizedInlayHintText(alias) != "" && normalizedInlayHintText(alias) == normalizedInlayHintText(label) {
+		return "->"
+	}
+	return "-> " + label
+}
+
+func normalizedInlayHintText(s string) string {
+	s = strings.ReplaceAll(s, "->", "")
+	return strings.TrimSpace(s)
 }
 
 func inlayHintTargetLabel(doc *parse.Doc, targetPath string, includePathFallback bool) string {

@@ -69,6 +69,50 @@ See [[target]] [[note-id]] [[#source]] [[target#Intro]] [[target#^ref-block]] [[
 	}
 }
 
+func TestResolveInlayHint_WikiLinkAliasMatchingLabelShowsArrowOnly(t *testing.T) {
+	dir := t.TempDir()
+	writeRefFile(t, dir, "target.md", `---
+title: Target Title
+---
+# Intro
+`)
+	writeRefFile(t, dir, "source.md", `[[target|Target Title]] [[target|Different Alias]] [[target#Intro|Target Title#Intro]]
+`)
+
+	idx := index.New(dir, nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	params := &InlayHintParams{
+		Range: protocol.Range{
+			Start: protocol.Position{Line: 0, Character: 0},
+			End:   protocol.Position{Line: 0, Character: 200},
+		},
+	}
+	hints, err := ResolveInlayHint(context.Background(), idx, "source.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveInlayHint: %v", err)
+	}
+	if len(hints) != 3 {
+		t.Fatalf("want 3 hints, got %d", len(hints))
+	}
+
+	wantLabels := []string{
+		"->",
+		"-> Target Title",
+		"->",
+	}
+	for i, want := range wantLabels {
+		if got := hints[i].Label; got != want {
+			t.Fatalf("hint %d label: want %q, got %#v", i, want, got)
+		}
+	}
+	if got := hints[0].Position.Character; got != 21 {
+		t.Fatalf("hint 0 position: want character 21 before closing brackets, got %d", got)
+	}
+}
+
 func TestResolveInlayHint_RespectsRange(t *testing.T) {
 	dir := t.TempDir()
 	writeRefFile(t, dir, "target.md", "# Target\n")
