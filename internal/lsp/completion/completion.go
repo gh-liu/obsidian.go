@@ -26,7 +26,7 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 	linkCtx := parseCursorContext(reqCtx.line, byteOff)
 	if linkCtx == nil {
 		// Cursor after a single '[' — signal incomplete to keep session open
-		if byteOff > 0 && reqCtx.line[byteOff-1] == '[' {
+		if byteOff > 0 && byteOff <= len(reqCtx.line) && reqCtx.line[byteOff-1] == '[' {
 			return &protocol.CompletionList{IsIncomplete: true}, nil
 		}
 		return nil, nil

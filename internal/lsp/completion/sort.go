@@ -13,22 +13,36 @@ func stringContainsLower(s, substr string) bool {
 
 func sortByRelevance(items []protocol.CompletionItem, filter string) {
 	sort.SliceStable(items, func(i, j int) bool {
-		a := strings.ToLower(strings.TrimSuffix(items[i].Label, ".md"))
-		b := strings.ToLower(strings.TrimSuffix(items[j].Label, ".md"))
+		ai := strings.ToLower(items[i].Label)
+		bi := strings.ToLower(items[j].Label)
 		if filter != "" {
-			ai := strings.Index(a, filter)
-			bi := strings.Index(b, filter)
-			if ai >= 0 && bi >= 0 && ai != bi {
+			f := strings.ToLower(filter)
+			// Prefer prefix matches over mid-string matches
+			aiPrefix := strings.HasPrefix(ai, f)
+			biPrefix := strings.HasPrefix(bi, f)
+			if aiPrefix != biPrefix {
+				return aiPrefix
+			}
+			// Among prefix matches, prefer shorter labels
+			if aiPrefix {
+				if len(ai) != len(bi) {
+					return len(ai) < len(bi)
+				}
 				return ai < bi
 			}
-			if ai >= 0 != (bi >= 0) {
-				return ai >= 0
+			// Mid-string: prefer earlier position
+			aiPos := strings.Index(ai, f)
+			biPos := strings.Index(bi, f)
+			if aiPos >= 0 && biPos >= 0 && aiPos != biPos {
+				return aiPos < biPos
+			}
+			if aiPos >= 0 != (biPos >= 0) {
+				return aiPos >= 0
 			}
 		}
-		// Shorter paths first, then alphabetical
-		if len(a) != len(b) {
-			return len(a) < len(b)
+		if len(ai) != len(bi) {
+			return len(ai) < len(bi)
 		}
-		return a < b
+		return ai < bi
 	})
 }

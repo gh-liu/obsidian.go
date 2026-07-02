@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
 	"go.lsp.dev/protocol"
 )
@@ -207,4 +208,48 @@ func TestMain(m *testing.M) {
 		os.Chdir(filepath.Join(dir, "internal", "lsp"))
 	}
 	os.Exit(m.Run())
+}
+
+func TestCompletionInsertText(t *testing.T) {
+	idx := testIndex(t)
+
+	// notes/aaa.md has id=test-aaa, title="Note AAA"
+	// Completion [[ test-aaa ]] should produce [[test-aaa|Note AAA]] format
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 0, Character: 0},
+		},
+	}
+
+	// Open bbb.md with [[test-aa typed at a known line
+	content := "# Test\n\n[[test-aa"
+	idx.SetContent("notes/bbb.md", []byte(content))
+	idx.FlushReparse("notes/bbb.md")
+
+	// Position at end of [[test-aa (line is 9 characters: [[test-aa)
+	params.Position = protocol.Position{Line: 2, Character: 9}
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("no completion items")
+	}
+
+	// Find the test-aaa item
+	var found bool
+	for _, item := range list.Items {
+		t.Logf("  completion: label=%q insertText=%q detail=%q", item.Label, item.InsertText, item.Detail)
+		if item.InsertText == "test-aaa|Note AAA" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("completion for test-aaa should produce [[test-aaa|Note AAA]]")
+	}
+
+	idx.ClearContent("notes/bbb.md")
 }

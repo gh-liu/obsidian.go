@@ -19,19 +19,45 @@ func completeFiles(idx *index.Index, prefix string) []protocol.CompletionItem {
 			continue
 		}
 		name := strings.TrimSuffix(filepath.Base(path), ".md")
-		display := name
-		if doc.Title != "" && doc.Title != name {
-			display = doc.Title
+
+		// Check match against: basename, title, id, and all aliases.
+		if prefixLower != "" {
+			matched := stringContainsLower(name, prefixLower) ||
+				stringContainsLower(doc.Title, prefixLower) ||
+				stringContainsLower(doc.ID, prefixLower)
+			for _, a := range doc.Aliases {
+				if stringContainsLower(a, prefixLower) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
 		}
 
-		if prefixLower != "" && !stringContainsLower(name, prefixLower) && !stringContainsLower(display, prefixLower) {
-			continue
+		// Label: prefer title, fallback to name.
+		label := name
+		detail := ""
+		if doc.Title != "" && !strings.EqualFold(doc.Title, name) {
+			label = doc.Title
+			detail = path
+		}
+
+		// InsertText: [[id|title]] format when both available,
+		// otherwise [[id]], falling back to path.
+		insertText := path
+		if doc.ID != "" {
+			insertText = doc.ID
+			if doc.Title != "" && !strings.EqualFold(doc.ID, doc.Title) {
+				insertText = doc.ID + "|" + doc.Title
+			}
 		}
 
 		item := protocol.CompletionItem{
-			Label:      path,
-			Detail:     display,
-			InsertText: path,
+			Label:      label,
+			Detail:     detail,
+			InsertText: insertText,
 			Kind:       protocol.CompletionItemKindFile,
 		}
 		items = append(items, item)
