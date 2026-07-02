@@ -10,10 +10,13 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gh-liu/obsidian.go/parse"
 	"golang.org/x/sync/errgroup"
 )
+
+const reparseDelay = 100 * time.Millisecond
 
 // IgnoreFunc returns true if a path should be skipped during indexing.
 // path is relative to vault root.
@@ -32,6 +35,10 @@ type Index struct {
 
 	// Open-file overlay: holds unsaved editor content.
 	contentByPath map[string]string // relPath → raw content
+
+	// Debounce reparse: avoids repeated re-parsing during fast typing.
+	debounceMu     sync.Mutex
+	debounceTimers map[string]*time.Timer
 }
 
 // New creates an empty index for the given vault root.
@@ -42,13 +49,14 @@ func New(root string, log *slog.Logger, ignore IgnoreFunc) *Index {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Index{
-		root:          abs,
-		log:           log,
-		ignore:        ignore,
-		byPath:        make(map[string]*parse.Doc),
-		byID:          make(map[string]string),
-		byBasename:    make(map[string][]string),
-		contentByPath: make(map[string]string),
+		root:           abs,
+		log:            log,
+		ignore:         ignore,
+		byPath:         make(map[string]*parse.Doc),
+		byID:           make(map[string]string),
+		byBasename:     make(map[string][]string),
+		contentByPath:  make(map[string]string),
+		debounceTimers: make(map[string]*time.Timer),
 	}
 }
 
@@ -280,25 +288,23 @@ func (x *Index) GetLines(path string) ([]string, error) {
 	return strings.Split(content, "\n"), nil
 }
 
-// SetContent stores raw content for an open file and re-parses into the index.
+// SetContent stores raw content for an open file and schedules debounced re-parse.
+// The overlay is updated immediately so reads see the latest content.
+// Re-parsing is delayed by reparseDelay to avoid churn during fast typing.
 func (x *Index) SetContent(path string, content []byte) error {
 	path = filepath.ToSlash(path)
-	doc, err := parse.Parse(content, path)
-	if err != nil {
-		return err
-	}
 	x.mu.Lock()
-	defer x.mu.Unlock()
 	x.contentByPath[path] = string(content)
-	x.removeDocLocked(path)
-	x.addDocLocked(path, doc)
+	x.mu.Unlock()
+	x.scheduleReparse(path)
 	return nil
 }
 
-// ClearContent removes open-file content and reverts to disk.
+// ClearContent removes open-file content, cancels pending reparse, and reverts to disk.
 // If the file does not exist on disk, removes it from the index.
 func (x *Index) ClearContent(path string) {
 	path = filepath.ToSlash(path)
+	x.cancelPendingReparse(path)
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	delete(x.contentByPath, path)
@@ -325,6 +331,61 @@ func (x *Index) HasOpenContent(path string) bool {
 }
 
 // --- internal helpers ---
+
+func (x *Index) scheduleReparse(path string) {
+	x.debounceMu.Lock()
+	if t, ok := x.debounceTimers[path]; ok {
+		t.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(reparseDelay, func() {
+		x.debounceMu.Lock()
+		if current, ok := x.debounceTimers[path]; ok && current == timer {
+			delete(x.debounceTimers, path)
+		}
+		x.debounceMu.Unlock()
+		x.reparseFromContent(path)
+	})
+	x.debounceTimers[path] = timer
+	x.debounceMu.Unlock()
+}
+
+func (x *Index) cancelPendingReparse(path string) {
+	x.debounceMu.Lock()
+	defer x.debounceMu.Unlock()
+	if t, ok := x.debounceTimers[path]; ok {
+		t.Stop()
+		delete(x.debounceTimers, path)
+	}
+}
+
+func (x *Index) reparseFromContent(path string) {
+	x.mu.RLock()
+	content, ok := x.contentByPath[path]
+	x.mu.RUnlock()
+	if !ok {
+		return
+	}
+	doc, err := parse.Parse([]byte(content), path)
+	if err != nil {
+		return
+	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if _, ok := x.contentByPath[path]; !ok {
+		return
+	}
+	x.removeDocLocked(path)
+	x.addDocLocked(path, doc)
+}
+
+// FlushReparse synchronously reparses current open content for path.
+// Intended for tests to avoid waiting for debounce delay.
+func (x *Index) FlushReparse(path string) {
+	path = filepath.ToSlash(path)
+	x.cancelPendingReparse(path)
+	x.reparseFromContent(path)
+}
 
 func basenameKey(path string) string {
 	base := strings.ToLower(filepath.Base(filepath.ToSlash(path)))

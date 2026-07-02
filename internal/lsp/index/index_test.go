@@ -162,7 +162,6 @@ title: "Updated File"
 func TestOpenFileOverlay(t *testing.T) {
 	idx := New(testdataPath(t), nil, nil)
 
-	// SetContent for an unsaved file
 	unsavedContent := []byte(`---
 id: unsaved-id
 title: "Unsaved"
@@ -174,6 +173,8 @@ title: "Unsaved"
 	if err := idx.SetContent("unsaved.md", unsavedContent); err != nil {
 		t.Fatalf("SetContent: %v", err)
 	}
+	// Flush debounce so the reparse completes before assertions
+	idx.FlushReparse("unsaved.md")
 
 	// Content should be retrievable
 	c, err := idx.GetContent("unsaved.md")
@@ -207,6 +208,7 @@ title: "Unsaved"
 	if err := idx.SetContent("unsaved.md", unsavedContent); err != nil {
 		t.Fatalf("SetContent after IndexAll: %v", err)
 	}
+	idx.FlushReparse("unsaved.md")
 
 	p := idx.ResolveLinkTargetToPath("unsaved-id")
 	if p != "unsaved.md" {
@@ -339,5 +341,73 @@ func TestDocLinks(t *testing.T) {
 	}
 	if len(doc.Links) < 3 {
 		t.Errorf("bbb.md links = %d, want >= 3", len(doc.Links))
+	}
+}
+
+func TestDebounceReparse(t *testing.T) {
+	idx := New(testdataPath(t), nil, nil)
+	if err := idx.IndexAll(context.Background()); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	// Content is immediately available after SetContent
+	c1 := []byte(`---
+id: debounce-1
+title: "First"
+---
+# First
+`)
+	if err := idx.SetContent("debounce.md", c1); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+
+	// Content readable immediately
+	got, err := idx.GetContent("debounce.md")
+	if err != nil {
+		t.Fatalf("GetContent: %v", err)
+	}
+	if got != string(c1) {
+		t.Error("GetContent mismatch immediately after SetContent")
+	}
+
+	// Reparse hasn't happened yet (no FlushReparse called)
+	// Doc may or may not be updated depending on goroutine scheduling
+	// Flush to make deterministic
+	idx.FlushReparse("debounce.md")
+
+	doc := idx.GetByPath("debounce.md")
+	if doc == nil || doc.ID != "debounce-1" {
+		t.Errorf("after flush: doc.ID = %q, want debounce-1", doc.ID)
+	}
+
+	// Multiple rapid SetContent calls should only result in one reparse
+	c2 := []byte(`---
+id: debounce-2
+title: "Second"
+---
+# Second
+`)
+	c3 := []byte(`---
+id: debounce-3
+title: "Third"
+---
+# Third
+`)
+	idx.SetContent("debounce.md", c2)
+	idx.SetContent("debounce.md", c3)
+	idx.FlushReparse("debounce.md")
+
+	doc = idx.GetByPath("debounce.md")
+	if doc == nil || doc.ID != "debounce-3" {
+		t.Errorf("after rapid updates: doc.ID = %q, want debounce-3", doc.ID)
+	}
+
+	// ClearContent cancels pending reparse and reverts
+	idx.ClearContent("debounce.md")
+	if idx.HasOpenContent("debounce.md") {
+		t.Error("HasOpenContent true after ClearContent")
+	}
+	if idx.GetByPath("debounce.md") != nil {
+		t.Error("Doc still indexed after ClearContent (file doesn't exist on disk)")
 	}
 }
