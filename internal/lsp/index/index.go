@@ -330,6 +330,15 @@ func (x *Index) HasOpenContent(path string) bool {
 	return ok
 }
 
+// ShouldIgnore reports whether path is skipped by the index ignore filter.
+func (x *Index) ShouldIgnore(path string) bool {
+	path = filepath.ToSlash(path)
+	x.mu.RLock()
+	ignore := x.ignore
+	x.mu.RUnlock()
+	return ignore != nil && ignore(path)
+}
+
 // --- internal helpers ---
 
 func (x *Index) scheduleReparse(path string) {

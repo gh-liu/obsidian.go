@@ -253,3 +253,87 @@ func TestCompletionInsertText(t *testing.T) {
 
 	idx.ClearContent("notes/bbb.md")
 }
+
+func TestEmbedImageCompletion(t *testing.T) {
+	idx := testIndex(t)
+	imagePath := filepath.Join(idx.Root(), "assets", "cover.png")
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(imagePath, []byte("png"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	defer os.Remove(imagePath)
+
+	content := "# Test\n\n![[cov"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 2, Character: 6},
+		},
+	}
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", params)
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("completion list is nil")
+	}
+	for _, item := range list.Items {
+		if item.InsertText == "assets/cover.png" {
+			return
+		}
+	}
+	t.Fatalf("image completion missing assets/cover.png: %#v", list.Items)
+}
+
+func TestEmbedImageCompletionRespectsImagePaths(t *testing.T) {
+	idx := testIndex(t)
+	assetImage := filepath.Join(idx.Root(), "assets", "scoped.png")
+	otherImage := filepath.Join(idx.Root(), "other", "scoped.png")
+	for _, p := range []string{assetImage, otherImage} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(p, []byte("png"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		defer os.Remove(p)
+	}
+
+	content := "# Test\n\n![[scoped"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 2, Character: 9},
+		},
+	}
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", params, []string{"assets"})
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	var foundAsset, foundOther bool
+	for _, item := range list.Items {
+		foundAsset = foundAsset || item.InsertText == "assets/scoped.png"
+		foundOther = foundOther || item.InsertText == "other/scoped.png"
+	}
+	if !foundAsset || foundOther {
+		t.Fatalf("imagePaths should include only assets image; foundAsset=%v foundOther=%v items=%#v", foundAsset, foundOther, list.Items)
+	}
+}

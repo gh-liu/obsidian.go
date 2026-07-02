@@ -12,7 +12,7 @@ import (
 const maxItems = 100
 
 // ResolveCompletion returns completion items for Obsidian wiki links.
-func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding string, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
+func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding string, params *protocol.CompletionParams, imagePaths ...[]string) (*protocol.CompletionList, error) {
 	if idx == nil || params == nil {
 		return nil, nil
 	}
@@ -34,6 +34,12 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 
 	var items []protocol.CompletionItem
 	switch {
+	case linkCtx.completeImages:
+		var paths []string
+		if len(imagePaths) > 0 {
+			paths = imagePaths[0]
+		}
+		items = completeImages(idx, linkCtx.prefix, paths)
 	case linkCtx.completeFiles:
 		items = completeFiles(idx, linkCtx.prefix)
 	case linkCtx.completeAlias:
@@ -58,11 +64,12 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 
 // cursorContext mirrors parse.WikiLinkCursorContext for completion decisions.
 type cursorContext struct {
-	prefix        string
-	completeFiles bool
+	prefix         string
+	completeFiles  bool
+	completeImages bool
 	completeBlocks bool
-	completeAlias bool
-	targetPath    string // for heading/block/alias of a specific target
+	completeAlias  bool
+	targetPath     string // for heading/block/alias of a specific target
 }
 
 func parseCursorContext(line string, byteOff int) *cursorContext {
@@ -71,11 +78,12 @@ func parseCursorContext(line string, byteOff int) *cursorContext {
 		return nil
 	}
 	return &cursorContext{
-		prefix:        ctx["prefix"],
-		completeFiles: ctx["completeFiles"] == "true",
+		prefix:         ctx["prefix"],
+		completeFiles:  ctx["completeFiles"] == "true",
+		completeImages: ctx["completeImages"] == "true",
 		completeBlocks: ctx["completeBlocks"] == "true",
-		completeAlias: ctx["completeAlias"] == "true",
-		targetPath:    ctx["targetPath"],
+		completeAlias:  ctx["completeAlias"] == "true",
+		targetPath:     ctx["targetPath"],
 	}
 }
 
@@ -133,11 +141,12 @@ func parseWikiLinkCursorContext(line string, byteOff int) map[string]string {
 	}
 
 	result := map[string]string{
-		"prefix":        inner,
-		"completeFiles": "false",
+		"prefix":         inner,
+		"completeFiles":  "false",
+		"completeImages": "false",
 		"completeBlocks": "false",
-		"completeAlias": "false",
-		"targetPath":    "",
+		"completeAlias":  "false",
+		"targetPath":     "",
 	}
 
 	target, anchorBlock, _ := parseWikiLinkParts(inner)
@@ -168,7 +177,11 @@ func parseWikiLinkCursorContext(line string, byteOff int) map[string]string {
 		return result
 	}
 
-	result["completeFiles"] = "true"
+	if linkStart > 0 && line[linkStart-1] == '!' {
+		result["completeImages"] = "true"
+	} else {
+		result["completeFiles"] = "true"
+	}
 	result["prefix"] = target
 	return result
 }

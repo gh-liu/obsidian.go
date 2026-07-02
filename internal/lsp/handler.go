@@ -62,9 +62,9 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 				OpenClose: true,
 				Change:    protocol.TextDocumentSyncKindFull,
 			},
-			DefinitionProvider:         true,
-			ReferencesProvider:         true,
-			DocumentSymbolProvider:     true,
+			DefinitionProvider:     true,
+			ReferencesProvider:     true,
+			DocumentSymbolProvider: true,
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"[", "#", "|"},
 			},
@@ -219,7 +219,7 @@ func (h *Handler) Completion(ctx context.Context, params *protocol.CompletionPar
 	if rel == "" {
 		return nil, nil
 	}
-	return completion.ResolveCompletion(ctx, h.index, rel, h.positionEncoding, params)
+	return completion.ResolveCompletion(ctx, h.index, rel, h.positionEncoding, params, h.settings.GetImagePaths())
 }
 
 func (h *Handler) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]any, error) {
@@ -323,6 +323,9 @@ func (h *Handler) applySettings(settings any) {
 	}
 	if s, ok := section["templatePath"].(string); ok {
 		h.settings.SetTemplatePath(s)
+	}
+	if v, ok := section["imagePaths"].([]any); ok {
+		h.settings.SetImagePaths(toStrings(v))
 	}
 }
 

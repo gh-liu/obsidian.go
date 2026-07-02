@@ -1,6 +1,7 @@
 package completion
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -66,6 +67,68 @@ func completeFiles(idx *index.Index, prefix string) []protocol.CompletionItem {
 	// Sort by relevance
 	sortByRelevance(items, prefixLower)
 	return items
+}
+
+func completeImages(idx *index.Index, prefix string, imagePaths []string) []protocol.CompletionItem {
+	var items []protocol.CompletionItem
+	prefixLower := strings.ToLower(prefix)
+	for _, path := range listImageFiles(idx, imagePaths) {
+		if prefixLower != "" && !stringContainsLower(path, prefixLower) && !stringContainsLower(filepath.Base(path), prefixLower) {
+			continue
+		}
+		items = append(items, protocol.CompletionItem{
+			Label:      path,
+			InsertText: path,
+			Kind:       protocol.CompletionItemKindFile,
+		})
+	}
+	sortByRelevance(items, prefixLower)
+	return items
+}
+
+func listImageFiles(idx *index.Index, imagePaths []string) []string {
+	root := idx.Root()
+	if len(imagePaths) == 0 {
+		imagePaths = []string{""}
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, base := range imagePaths {
+		base = filepath.Clean(filepath.FromSlash(strings.TrimSpace(base)))
+		if base == "." {
+			base = ""
+		}
+		walkRoot := filepath.Join(root, base)
+		_ = filepath.Walk(walkRoot, func(fullPath string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() || !isImageFile(info.Name()) {
+				return nil
+			}
+			rel, err := filepath.Rel(root, fullPath)
+			if err != nil {
+				return nil
+			}
+			rel = filepath.ToSlash(rel)
+			if idx.ShouldIgnore(rel) {
+				return nil
+			}
+			if _, ok := seen[rel]; ok {
+				return nil
+			}
+			seen[rel] = struct{}{}
+			out = append(out, rel)
+			return nil
+		})
+	}
+	return out
+}
+
+func isImageFile(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp":
+		return true
+	default:
+		return false
+	}
 }
 
 func completeHeadings(idx *index.Index, targetPath, currentRel, prefix string) []protocol.CompletionItem {

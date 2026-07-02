@@ -8,7 +8,7 @@ LSP server for Obsidian vaults. Provides go-to-definition, completion, outline, 
 |----------------------|-------------------------------------------------------------------------------------------------|
 | **Go to Definition** | Jump from `[[file]]`, `[[#heading]]`, `[[path#heading]]` to target                              |
 | **Find References**  | Find all references to a note                                                                   |
-| **Completion**       | Trigger on `[`, `#`, or `|` for wiki link / heading / alias completion                          |
+| **Completion**       | Trigger on `[`, `#`, or `|` for wiki link / heading / alias / `![[image]]` completion           |
 | **Document Symbol**  | Document outline (heading tree)                                                                 |
 | **Format**           | Format frontmatter (id, title, createdAt, updatedAt)                                            |
 | **Execute Command**  | `obsidian.new`, `obsidian.newFromTemplate`, `obsidian.insertTemplate`, `obsidian.listTemplates` |
@@ -54,6 +54,7 @@ vim.lsp.config("obsidian_ls", {
 |-------------------------|---------------------------------------------|
 | `obsidian.ignores`      | Array of regex patterns for paths to ignore |
 | `obsidian.templatePath` | Template directory, default `.templates`    |
+| `obsidian.imagePaths`   | Image directories for `![[...]]` completion; default scans the whole vault |
 
 ## Execute Commands
 

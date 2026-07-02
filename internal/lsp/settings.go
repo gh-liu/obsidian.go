@@ -11,6 +11,7 @@ type Settings struct {
 	Ignores      []string
 	IgnoreREs    []*regexp.Regexp
 	TemplatePath string
+	ImagePaths   []string
 }
 
 // ShouldIgnore returns true if the given path matches any ignore pattern.
@@ -55,4 +56,16 @@ func (s *Settings) GetTemplatePath() string {
 		return ".templates"
 	}
 	return s.TemplatePath
+}
+
+func (s *Settings) SetImagePaths(paths []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ImagePaths = paths
+}
+
+func (s *Settings) GetImagePaths() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.ImagePaths...)
 }
