@@ -23,18 +23,9 @@ func ResolveReferences(ctx context.Context, idx *index.Index, relPath, encoding 
 		return nil, nil
 	}
 
-	// If cursor is on a heading, resolve heading references
-	lineIdx := int(params.Position.Line)
-	if lineIdx >= 0 && lineIdx < len(lines) {
-		byteOff := enc.CharToByte(lines[lineIdx], int(params.Position.Character))
-		if heading := headingAtPosition(doc, lineIdx, byteOff); heading != nil {
-			if locs, matched := resolveHeadingReferences(idx, relPath, heading, enc, params.Context.IncludeDeclaration); matched {
-				return locs, nil
-			}
-		}
-	}
+	_ = lines
 
-	// Fallback: file-level backlinks
+	// File-level backlinks. Heading references are intentionally not resolved yet.
 	return resolveFileReferences(idx, relPath, enc), nil
 }
 
@@ -56,7 +47,7 @@ func resolveFileReferences(idx *index.Index, relPath string, enc position.Encode
 	var out []protocol.Location
 	for _, entry := range idx.SnapshotPaths() {
 		for _, link := range entry.Doc.Links {
-			if link == nil || link.Target == "" {
+			if link == nil || link.Target == "" || link.Kind != parse.LinkWiki {
 				continue
 			}
 			if idx.ResolveLinkTargetToPath(link.Target) != relPath {
