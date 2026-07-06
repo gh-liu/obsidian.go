@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
@@ -62,9 +64,10 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 				OpenClose: true,
 				Change:    protocol.TextDocumentSyncKindFull,
 			},
-			DefinitionProvider:     true,
-			ReferencesProvider:     true,
-			DocumentSymbolProvider: true,
+			DefinitionProvider:         true,
+			ReferencesProvider:         true,
+			DocumentSymbolProvider:     true,
+			DocumentFormattingProvider: true,
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"[", "#", "|"},
 			},
@@ -248,6 +251,31 @@ func (h *Handler) Symbols(ctx context.Context, params *protocol.WorkspaceSymbolP
 	return ResolveWorkspaceSymbol(ctx, h.index, h.positionEncoding, params)
 }
 
+func (h *Handler) Formatting(ctx context.Context, params *protocol.DocumentFormattingParams) ([]protocol.TextEdit, error) {
+	if h.index == nil || params == nil {
+		return nil, nil
+	}
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	content, err := h.index.GetContent(rel)
+	if err != nil {
+		return nil, nil
+	}
+	formatted, changed, err := formatFrontmatterFields([]byte(content), h.settings.GetFormatFrontmatter())
+	if err != nil || !changed {
+		return nil, err
+	}
+	return []protocol.TextEdit{{
+		Range: protocol.Range{
+			Start: protocol.Position{Line: 0, Character: 0},
+			End:   protocol.Position{Line: uint32(strings.Count(content, "\n") + 1), Character: 0},
+		},
+		NewText: string(formatted),
+	}}, nil
+}
+
 // --- helpers ---
 
 func resolveVaultRoot(params *protocol.InitializeParams) string {
@@ -327,6 +355,11 @@ func (h *Handler) applySettings(settings any) {
 	if v, ok := section["imagePaths"].([]any); ok {
 		h.settings.SetImagePaths(toStrings(v))
 	}
+	if format, ok := section["format"].(map[string]any); ok {
+		if frontmatter, ok := format["frontmatter"].(map[string]any); ok {
+			h.settings.SetFormatFrontmatter(toStringMap(frontmatter))
+		}
+	}
 }
 
 func extractObsidianSection(settings any) map[string]any {
@@ -351,6 +384,84 @@ func toStrings(v []any) []string {
 		}
 	}
 	return out
+}
+
+func toStringMap(v map[string]any) map[string]string {
+	out := make(map[string]string, len(v))
+	for k, x := range v {
+		if s, ok := x.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+func formatFrontmatterFields(content []byte, fields map[string]string) ([]byte, bool, error) {
+	if len(fields) == 0 || !bytes.HasPrefix(content, []byte("---\n")) {
+		return content, false, nil
+	}
+	end := bytes.Index(content[4:], []byte("\n---"))
+	if end < 0 {
+		return content, false, nil
+	}
+	end += 4
+	frontmatter := content[4:end]
+	lines := bytes.Split(frontmatter, []byte("\n"))
+	changed := false
+	for i, line := range lines {
+		key, ok := frontmatterKey(line)
+		if !ok {
+			continue
+		}
+		tmpl, ok := fields[key]
+		if !ok {
+			continue
+		}
+		value, err := renderFrontmatterTemplate(tmpl)
+		if err != nil {
+			return nil, false, err
+		}
+		newLine := []byte(key + ": " + value)
+		if !bytes.Equal(line, newLine) {
+			lines[i] = newLine
+			changed = true
+		}
+	}
+	if !changed {
+		return content, false, nil
+	}
+	out := append([]byte("---\n"), bytes.Join(lines, []byte("\n"))...)
+	out = append(out, content[end:]...)
+	return out, true, nil
+}
+
+func frontmatterKey(line []byte) (string, bool) {
+	idx := bytes.IndexByte(line, ':')
+	if idx <= 0 {
+		return "", false
+	}
+	key := strings.TrimSpace(string(line[:idx]))
+	if key == "" || strings.ContainsAny(key, " \t") {
+		return "", false
+	}
+	return key, true
+}
+
+func renderFrontmatterTemplate(tmpl string) (string, error) {
+	t, err := template.New("frontmatter").Funcs(template.FuncMap{
+		"now": func() time.Time { return time.Now() },
+		"formatTime": func(layout string, t time.Time) string {
+			return t.Format(layout)
+		},
+	}).Parse(tmpl)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, nil); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 func (h *Handler) trackOpenFile(rel string) {

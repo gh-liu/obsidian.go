@@ -12,6 +12,7 @@ type Settings struct {
 	IgnoreREs    []*regexp.Regexp
 	TemplatePath string
 	ImagePaths   []string
+	FormatFrontmatter map[string]string
 }
 
 // ShouldIgnore returns true if the given path matches any ignore pattern.
@@ -68,4 +69,20 @@ func (s *Settings) GetImagePaths() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return append([]string(nil), s.ImagePaths...)
+}
+
+func (s *Settings) SetFormatFrontmatter(fields map[string]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.FormatFrontmatter = fields
+}
+
+func (s *Settings) GetFormatFrontmatter() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]string, len(s.FormatFrontmatter))
+	for k, v := range s.FormatFrontmatter {
+		out[k] = v
+	}
+	return out
 }

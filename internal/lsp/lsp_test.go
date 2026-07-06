@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/completion"
@@ -208,6 +209,49 @@ func TestMain(m *testing.M) {
 		os.Chdir(filepath.Join(dir, "internal", "lsp"))
 	}
 	os.Exit(m.Run())
+}
+
+func TestFormattingUpdatesConfiguredExistingFrontmatterFieldOnly(t *testing.T) {
+	h, _, err := NewHandler(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	h.applySettings(map[string]any{
+		"format": map[string]any{
+			"frontmatter": map[string]any{
+				"updatedAt": `{{ now | formatTime "2006-01-02" }}`,
+				"missing":   `{{ now | formatTime "2006-01-02" }}`,
+			},
+		},
+	})
+	idx := testIndex(t)
+	h.index = idx
+	content := "---\ntitle: Existing\nupdatedAt: old\n---\n# Body\n"
+	if err := idx.SetContent("format_test.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	defer idx.ClearContent("format_test.md")
+
+	edits, err := h.Formatting(context.Background(), &protocol.DocumentFormattingParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.DocumentURI("file://" + filepath.Join(idx.Root(), "format_test.md")),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Formatting: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("got %d edits, want 1", len(edits))
+	}
+	if !strings.Contains(edits[0].NewText, "updatedAt: ") || strings.Contains(edits[0].NewText, "updatedAt: old") {
+		t.Fatalf("updatedAt was not replaced:\n%s", edits[0].NewText)
+	}
+	if strings.Contains(edits[0].NewText, "missing:") {
+		t.Fatalf("missing field was added:\n%s", edits[0].NewText)
+	}
+	if !strings.Contains(edits[0].NewText, "title: Existing") || !strings.Contains(edits[0].NewText, "# Body") {
+		t.Fatalf("unrelated content was not preserved:\n%s", edits[0].NewText)
+	}
 }
 
 func TestCompletionInsertText(t *testing.T) {
