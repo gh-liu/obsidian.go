@@ -64,6 +64,7 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 				OpenClose: true,
 				Change:    protocol.TextDocumentSyncKindFull,
 			},
+			HoverProvider:              true,
 			DefinitionProvider:         true,
 			ReferencesProvider:         true,
 			DocumentSymbolProvider:     true,
@@ -202,6 +203,17 @@ func (h *Handler) Definition(ctx context.Context, params *protocol.DefinitionPar
 		return nil, nil
 	}
 	return ResolveDefinition(ctx, h.index, rel, h.positionEncoding, params)
+}
+
+func (h *Handler) Hover(ctx context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+	if h.index == nil {
+		return nil, nil
+	}
+	rel := uriToRelPath(params.TextDocument.URI, h.index.Root())
+	if rel == "" {
+		return nil, nil
+	}
+	return ResolveHover(ctx, h.index, rel, h.positionEncoding, params)
 }
 
 func (h *Handler) References(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {

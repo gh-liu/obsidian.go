@@ -44,6 +44,21 @@ func TestInitializeAdvertisesWorkspaceSymbols(t *testing.T) {
 	}
 }
 
+func TestInitializeAdvertisesHover(t *testing.T) {
+	h, _, err := NewHandler(context.Background(), nil, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	result, err := h.Initialize(context.Background(), &protocol.InitializeParams{})
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if got, ok := result.Capabilities.HoverProvider.(bool); !ok || !got {
+		t.Fatalf("HoverProvider = %#v, want true", result.Capabilities.HoverProvider)
+	}
+}
+
 func TestDefinition(t *testing.T) {
 	idx := testIndex(t)
 
@@ -89,6 +104,53 @@ func TestDefinition(t *testing.T) {
 	expectedPath := protocol.DocumentURI("file://" + filepath.Join(idx.Root(), "notes/aaa.md"))
 	if string(locs[0].URI) != string(expectedPath) {
 		t.Errorf("location URI = %s, want %s", locs[0].URI, expectedPath)
+	}
+}
+
+func TestHoverWikiLink(t *testing.T) {
+	idx := testIndex(t)
+	doc := idx.GetByPath("notes/bbb.md")
+	if doc == nil {
+		t.Fatal("bbb.md not found")
+	}
+
+	var linkLine int
+	var linkChar int
+	for _, l := range doc.Links {
+		if l.Target == "test-aaa" {
+			linkLine = l.Range.Start.Line
+			linkChar = l.Range.Start.Character + 3
+			break
+		}
+	}
+	if linkLine == 0 && linkChar == 0 {
+		t.Fatal("link to test-aaa not found in bbb.md")
+	}
+
+	hover, err := ResolveHover(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.HoverParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: uint32(linkLine), Character: uint32(linkChar)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveHover: %v", err)
+	}
+	if hover == nil {
+		t.Fatal("got nil hover")
+	}
+	if hover.Contents.Kind != protocol.Markdown {
+		t.Fatalf("hover kind = %q, want markdown", hover.Contents.Kind)
+	}
+	for _, want := range []string{"**Note AAA**", "`notes/aaa.md`", "# Note AAA"} {
+		if !strings.Contains(hover.Contents.Value, want) {
+			t.Fatalf("hover content %q does not contain %q", hover.Contents.Value, want)
+		}
+	}
+	if hover.Range == nil {
+		t.Fatal("hover range is nil")
 	}
 }
 
