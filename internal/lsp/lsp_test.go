@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,24 @@ func testIndex(t *testing.T) *index.Index {
 		t.Fatalf("IndexAll: %v", err)
 	}
 	return idx
+}
+
+func TestInitializeAdvertisesWorkspaceSymbols(t *testing.T) {
+	h, _, err := NewHandler(context.Background(), nil, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	result, err := h.Initialize(context.Background(), &protocol.InitializeParams{})
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if result == nil || result.Capabilities.WorkspaceSymbolProvider == nil {
+		t.Fatal("WorkspaceSymbolProvider is not advertised")
+	}
+	if got, ok := result.Capabilities.WorkspaceSymbolProvider.(bool); !ok || !got {
+		t.Fatalf("WorkspaceSymbolProvider = %#v, want true", result.Capabilities.WorkspaceSymbolProvider)
+	}
 }
 
 func TestDefinition(t *testing.T) {
@@ -70,6 +89,41 @@ func TestDefinition(t *testing.T) {
 	expectedPath := protocol.DocumentURI("file://" + filepath.Join(idx.Root(), "notes/aaa.md"))
 	if string(locs[0].URI) != string(expectedPath) {
 		t.Errorf("location URI = %s, want %s", locs[0].URI, expectedPath)
+	}
+}
+
+func TestWorkspaceSymbolNoteTitlesWithTagFilters(t *testing.T) {
+	idx := testIndex(t)
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"title", "aaa", []string{"Note AAA"}},
+		{"tag", "#tag-b", []string{"Note BBB"}},
+		{"title and tag", "note #tag-c", []string{"Note CCC"}},
+		{"tag mismatch", "aaa #tag-b", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveWorkspaceSymbol(context.Background(), idx, "utf-8", &protocol.WorkspaceSymbolParams{Query: tt.query})
+			if err != nil {
+				t.Fatalf("ResolveWorkspaceSymbol: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d symbols, want %d: %#v", len(got), len(tt.want), got)
+			}
+			for i, want := range tt.want {
+				if got[i].Name != want {
+					t.Errorf("symbol[%d].Name = %q, want %q", i, got[i].Name, want)
+				}
+				if got[i].Kind != protocol.SymbolKindFile {
+					t.Errorf("symbol[%d].Kind = %v, want file", i, got[i].Kind)
+				}
+			}
+		})
 	}
 }
 

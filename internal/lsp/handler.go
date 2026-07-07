@@ -67,6 +67,7 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 			DefinitionProvider:         true,
 			ReferencesProvider:         true,
 			DocumentSymbolProvider:     true,
+			WorkspaceSymbolProvider:    true,
 			DocumentFormattingProvider: true,
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"[", "#", "|"},
