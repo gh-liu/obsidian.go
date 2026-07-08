@@ -497,3 +497,97 @@ func TestEmbedImageCompletionRespectsImagePaths(t *testing.T) {
 		t.Fatalf("imagePaths should include only assets image; foundAsset=%v foundOther=%v items=%#v", foundAsset, foundOther, list.Items)
 	}
 }
+
+func TestDocumentSymbolHeadingTree(t *testing.T) {
+	idx := testIndex(t)
+
+	// Test all 6 levels in chain: H1→H2→H3→H4→H5→H6
+	// Test skip-level: #### H4-skip directly under H1 (before any H2/H3 appears)
+	// Test siblings: H2 and H2b under H1
+	content := "" +
+		"# H1\n" +
+		"#### H4 skip\n" +
+		"## H2\n" +
+		"### H3\n" +
+		"#### H4\n" +
+		"##### H5\n" +
+		"###### H6\n" +
+		"\n" +
+		"## H2b\n" +
+		"### H3b\n"
+
+	if err := idx.SetContent("heading_test.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("heading_test.md")
+	defer idx.ClearContent("heading_test.md")
+
+	symbols, err := ResolveDocumentSymbol(context.Background(), idx, "heading_test.md", "utf-8", &protocol.DocumentSymbolParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.DocumentURI("file://" + filepath.Join(idx.Root(), "heading_test.md")),
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveDocumentSymbol: %v", err)
+	}
+
+	// Single root: H1
+	if len(symbols) != 1 {
+		t.Fatalf("root symbols = %d, want 1", len(symbols))
+	}
+	if symbols[0].Name != "H1" {
+		t.Errorf("root[0].Name = %q, want H1", symbols[0].Name)
+	}
+
+	// H1 should have 3 children: H4-skip, H2, H2b (in order of appearance)
+	if len(symbols[0].Children) != 3 {
+		t.Fatalf("H1 children = %d, want 3", len(symbols[0].Children))
+		for _, c := range symbols[0].Children {
+			t.Logf("  child: %q", c.Name)
+		}
+	}
+
+	// First child: skip-level #### H4-skip directly under H1
+	h4s := symbols[0].Children[0]
+	if h4s.Name != "H4 skip" {
+		t.Errorf("H1.child[0] = %q, want 'H4 skip'", h4s.Name)
+	}
+	if len(h4s.Children) != 0 {
+		t.Errorf("H4 skip children = %d, want 0", len(h4s.Children))
+	}
+
+	// Second child: H2 (chain H2→H3→H4→H5→H6)
+	h2 := symbols[0].Children[1]
+	if h2.Name != "H2" {
+		t.Errorf("H1.child[1] = %q, want H2", h2.Name)
+	}
+	if len(h2.Children) != 1 || h2.Children[0].Name != "H3" {
+		t.Fatalf("H2 child: got %v", h2.Children)
+	}
+
+	// H3 → H4 → H5 → H6 chain
+	h := h2.Children[0]
+	for _, want := range []string{"H4", "H5", "H6"} {
+		if len(h.Children) != 1 {
+			t.Fatalf("%s children = %d, want 1", h.Name, len(h.Children))
+		}
+		h = h.Children[0]
+		if h.Name != want {
+			t.Errorf("expected %q, got %q", want, h.Name)
+		}
+	}
+	if len(h.Children) != 0 {
+		t.Errorf("H6 has %d children, want 0", len(h.Children))
+	}
+
+	// Third child: H2b → H3b
+	h2b := symbols[0].Children[2]
+	if h2b.Name != "H2b" {
+		t.Errorf("H1.child[2] = %q, want H2b", h2b.Name)
+	}
+	if len(h2b.Children) != 1 || h2b.Children[0].Name != "H3b" {
+		t.Errorf("H2b children = %v, want [H3b]", h2b.Children)
+	}
+
+	t.Log("heading tree: all 6 levels + siblings + skip-level work correctly")
+}

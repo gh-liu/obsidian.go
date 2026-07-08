@@ -364,6 +364,92 @@ More text ^another
 	}
 }
 
+func TestParseCodeBlockFenceSkipsContent(t *testing.T) {
+	// # lines inside fenced code blocks must not be parsed as headings.
+	content := "" +
+		"# Real Heading\n" +
+		"\n" +
+		"```bash\n" +
+		"#!/bin/bash\n" +
+		"# this is a bash comment\n" +
+		"echo hello\n" +
+		"```\n" +
+		"\n" +
+		"## Another Heading\n"
+
+	doc, err := Parse([]byte(content), "test.md")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if len(doc.Headings) != 2 {
+		t.Errorf("headings = %d, want 2", len(doc.Headings))
+		for _, h := range doc.Headings {
+			t.Logf("  heading: H%d %q (line %d)", h.Level, h.Text, h.Range.Start.Line)
+		}
+	}
+	if doc.Headings[0].Text != "Real Heading" {
+		t.Errorf("heading[0] = %q, want 'Real Heading'", doc.Headings[0].Text)
+	}
+	if doc.Headings[1].Text != "Another Heading" {
+		t.Errorf("heading[1] = %q, want 'Another Heading'", doc.Headings[1].Text)
+	}
+
+	// Links inside code blocks should also be skipped.
+	content2 := "" +
+		"# Top\n" +
+		"\n" +
+		"```markdown\n" +
+		"[[not-a-real-link]]\n" +
+		"```\n"
+
+	doc2, err := Parse([]byte(content2), "test2.md")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(doc2.Links) != 0 {
+		t.Errorf("links inside code block = %d, want 0", len(doc2.Links))
+	}
+
+	// Tilde fences should also work.
+	content3 := "" +
+		"# Top\n" +
+		"\n" +
+		"~~~bash\n" +
+		"# not a heading\n" +
+		"~~~\n"
+
+	doc3, err := Parse([]byte(content3), "test3.md")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(doc3.Headings) != 1 {
+		t.Errorf("headings inside ~~~ fence = %d, want 1", len(doc3.Headings))
+	}
+
+	// Cross-fence: ``` inside ~~~ should not close the fence.
+	content4 := "" +
+		"# Top\n" +
+		"\n" +
+		"~~~\n" +
+		"```\n" +
+		"# still inside fence\n" +
+		"~~~\n" +
+		"\n" +
+		"## Real Again\n"
+
+	doc4, err := Parse([]byte(content4), "test4.md")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(doc4.Headings) != 2 {
+		t.Errorf("cross-fence headings = %d, want 2", len(doc4.Headings))
+		for _, h := range doc4.Headings {
+			t.Logf("  heading: H%d %q (line %d)", h.Level, h.Text, h.Range.Start.Line)
+		}
+	}
+}
+
 func TestWikiLinkCursorContext(t *testing.T) {
 	tests := []struct {
 		name       string

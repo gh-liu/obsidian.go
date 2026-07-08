@@ -56,18 +56,23 @@ func ResolveDocumentSymbol(ctx context.Context, idx *index.Index, relPath, encod
 		}
 	}
 
-	// Build tree
-	symbols := make([]protocol.DocumentSymbol, len(entries))
-	children := make([][]protocol.DocumentSymbol, len(entries))
+	// Build tree: record parent→child index mapping first, then resolve recursively.
+	childIndices := make([][]int, len(entries))
 	for i, e := range entries {
-		symbols[i] = e.sym
 		if e.parent >= 0 {
-			children[e.parent] = append(children[e.parent], symbols[i])
+			childIndices[e.parent] = append(childIndices[e.parent], i)
 		}
 	}
+
+	symbols := make([]protocol.DocumentSymbol, len(entries))
 	for i := range entries {
-		if len(children[i]) > 0 {
-			symbols[i].Children = children[i]
+		symbols[i] = entries[i].sym
+	}
+	var resolve func(idx int)
+	resolve = func(idx int) {
+		for _, childIdx := range childIndices[idx] {
+			resolve(childIdx)
+			symbols[idx].Children = append(symbols[idx].Children, symbols[childIdx])
 		}
 	}
 
@@ -75,6 +80,7 @@ func ResolveDocumentSymbol(ctx context.Context, idx *index.Index, relPath, encod
 	var roots []protocol.DocumentSymbol
 	for i, e := range entries {
 		if e.parent < 0 {
+			resolve(i)
 			roots = append(roots, symbols[i])
 		}
 	}

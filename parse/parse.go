@@ -64,8 +64,28 @@ func parseFrontmatter(raw []byte, doc *Doc, startLine int) {
 // parseBody processes body content line by line, extracting headings, blocks, and links.
 func parseBody(content []byte, bodyStartLine int, doc *Doc) {
 	lines := strings.Split(string(content), "\n")
+	var fenceMarker string // "```", "~~~", or "" when not inside a fenced code block
 	for i, line := range lines {
 		lineIdx := bodyStartLine + i
+
+		// Detect fenced code block boundaries (``` or ~~~).
+		// Skip everything inside code blocks to avoid treating bash/python comments
+		// (starting with #) as headings, or code constructs as blocks/links.
+		trimmed := strings.TrimLeft(line, " ")
+		indent := len(line) - len(trimmed)
+		if indent <= 3 {
+			if fm := detectFence(trimmed); fm != "" {
+				if fenceMarker == "" {
+					fenceMarker = fm
+				} else if fenceMarker == fm {
+					fenceMarker = ""
+				}
+				continue
+			}
+		}
+		if fenceMarker != "" {
+			continue
+		}
 
 		if h := parseHeading(line, lineIdx); h != nil {
 			doc.Headings = append(doc.Headings, h)
@@ -77,4 +97,25 @@ func parseBody(content []byte, bodyStartLine int, doc *Doc) {
 			doc.Links = append(doc.Links, l...)
 		}
 	}
+}
+
+// detectFence returns the fence marker type ("```" or "~~~") if line is a fenced
+// code block delimiter, or "" otherwise.
+func detectFence(line string) string {
+	for _, marker := range []string{"```", "~~~"} {
+		rest, ok := strings.CutPrefix(line, marker)
+		if !ok {
+			continue
+		}
+		// On opening fences, an info string (language) may follow the marker.
+		// On closing fences, only whitespace is allowed after the marker.
+		// We accept both: any non-backtick/non-tilde content is treated as info.
+		if strings.TrimSpace(rest) != "" && strings.TrimLeft(rest, string(marker[0])) == "" {
+			// The rest consists only of the marker character (e.g. ````` as closing),
+			// treat as a matching fence.
+			continue
+		}
+		return marker
+	}
+	return ""
 }
