@@ -2,6 +2,7 @@ package completion
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/gh-liu/obsidian.go/internal/lsp/index"
@@ -48,9 +49,20 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 	case linkCtx.completeAlias:
 		items = completeAliases(idx, linkCtx.targetPath, linkCtx.prefix)
 	case linkCtx.completeBlocks:
-		items = completeBlocks(idx, linkCtx.targetPath, reqCtx.currentRel, linkCtx.prefix)
+		if linkCtx.global {
+			items = completeGlobalBlocks(idx, linkCtx.prefix)
+		} else {
+			items = completeBlocks(idx, linkCtx.targetPath, reqCtx.currentRel, linkCtx.prefix)
+		}
 	default:
-		items = completeHeadings(idx, linkCtx.targetPath, reqCtx.currentRel, linkCtx.prefix)
+		if linkCtx.global {
+			items = completeGlobalHeadings(idx, linkCtx.prefix)
+		} else {
+			items = completeHeadings(idx, linkCtx.targetPath, reqCtx.currentRel, linkCtx.prefix)
+		}
+	}
+	if linkCtx.global {
+		applyGlobalSearchTextEdits(items, reqCtx.line, reqCtx.lineIdx, linkCtx.startByte, byteOff, reqCtx.enc)
 	}
 
 	isIncomplete := false
@@ -68,10 +80,12 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 // cursorContext mirrors parse.WikiLinkCursorContext for completion decisions.
 type cursorContext struct {
 	prefix         string
+	startByte      int
 	completeFiles  bool
 	completeImages bool
 	completeBlocks bool
 	completeAlias  bool
+	global         bool
 	targetPath     string // for heading/block/alias of a specific target
 }
 
@@ -82,10 +96,12 @@ func parseCursorContext(line string, byteOff int) *cursorContext {
 	}
 	return &cursorContext{
 		prefix:         ctx["prefix"],
+		startByte:      atoiDefault(ctx["startByte"], -1),
 		completeFiles:  ctx["completeFiles"] == "true",
 		completeImages: ctx["completeImages"] == "true",
 		completeBlocks: ctx["completeBlocks"] == "true",
 		completeAlias:  ctx["completeAlias"] == "true",
+		global:         ctx["global"] == "true",
 		targetPath:     ctx["targetPath"],
 	}
 }
@@ -145,10 +161,12 @@ func parseWikiLinkCursorContext(line string, byteOff int) map[string]string {
 
 	result := map[string]string{
 		"prefix":         inner,
+		"startByte":      "",
 		"completeFiles":  "false",
 		"completeImages": "false",
 		"completeBlocks": "false",
 		"completeAlias":  "false",
+		"global":         "false",
 		"targetPath":     "",
 	}
 
@@ -168,6 +186,19 @@ func parseWikiLinkCursorContext(line string, byteOff int) map[string]string {
 	}
 
 	if afterHash >= 0 || afterCaret >= 0 {
+		if strings.HasPrefix(inner, "##") {
+			result["global"] = "true"
+			result["startByte"] = strconv.Itoa(linkStart)
+			result["prefix"] = strings.TrimPrefix(inner[2:], " ")
+			return result
+		}
+		if strings.HasPrefix(inner, "^^") {
+			result["global"] = "true"
+			result["completeBlocks"] = "true"
+			result["startByte"] = strconv.Itoa(linkStart)
+			result["prefix"] = strings.TrimPrefix(inner[2:], " ")
+			return result
+		}
 		if afterCaret >= 0 && byteOff-linkStart-2 >= afterCaret {
 			result["completeBlocks"] = "true"
 			result["targetPath"] = strings.TrimSuffix(target, "#")
@@ -187,6 +218,34 @@ func parseWikiLinkCursorContext(line string, byteOff int) map[string]string {
 	}
 	result["prefix"] = target
 	return result
+}
+
+func applyGlobalSearchTextEdits(items []protocol.CompletionItem, line string, lineIdx, startByte, endByte int, enc position.Encoder) {
+	if startByte < 0 || endByte < startByte {
+		return
+	}
+	if endByte < len(line)-1 && line[endByte] == ']' && line[endByte+1] == ']' {
+		endByte += 2
+	}
+	for i := range items {
+		newText := "[[" + items[i].InsertText + "]]"
+		items[i].TextEdit = &protocol.TextEdit{
+			Range: protocol.Range{
+				Start: protocol.Position{Line: uint32(lineIdx), Character: uint32(enc.ByteToChar(line, startByte))},
+				End:   protocol.Position{Line: uint32(lineIdx), Character: uint32(enc.ByteToChar(line, endByte))},
+			},
+			NewText: newText,
+		}
+		items[i].InsertText = ""
+	}
+}
+
+func atoiDefault(s string, fallback int) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func parseWikiLinkParts(inner string) (target, anchorBlock, alias string) {

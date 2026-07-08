@@ -19,6 +19,9 @@ func parseBlockID(lines []string, idxInBody, lineIdx int) *Block {
 	if idx == len(line)-1 {
 		return nil
 	}
+	if idx > 0 && !isBlockIDBoundary(line[idx-1]) {
+		return nil
+	}
 	id := strings.TrimSpace(line[idx+1:])
 	if id == "" {
 		return nil
@@ -53,4 +56,8 @@ func parseBlockID(lines []string, idxInBody, lineIdx int) *Block {
 			End:   Pos{Line: lineIdx, Character: len(line)},
 		},
 	}
+}
+
+func isBlockIDBoundary(ch byte) bool {
+	return ch == ' ' || ch == '\t'
 }

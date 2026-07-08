@@ -600,6 +600,92 @@ func TestInlineCaretCompletionGeneratesBlockID(t *testing.T) {
 	}
 }
 
+func TestGlobalHeadingAndBlockCompletion(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Source\n\nLocal block ^local-block\n\n[[##\n[[^^"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	headingList, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md"))},
+			Position:     protocol.Position{Line: 4, Character: 4},
+		},
+	})
+	if err != nil {
+		t.Fatalf("heading completion: %v", err)
+	}
+	var foundHeading bool
+	for _, item := range headingList.Items {
+		if item.TextEdit != nil && strings.Contains(item.TextEdit.NewText, "[[test-aaa#Note AAA]]") {
+			foundHeading = true
+		}
+	}
+	if !foundHeading {
+		t.Fatalf("global heading completion missing cross-file heading: %#v", headingList.Items)
+	}
+
+	blockList, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md"))},
+			Position:     protocol.Position{Line: 5, Character: 4},
+		},
+	})
+	if err != nil {
+		t.Fatalf("block completion: %v", err)
+	}
+	var foundBlock bool
+	for _, item := range blockList.Items {
+		if item.TextEdit != nil && strings.Contains(item.TextEdit.NewText, "[[notes/bbb#^local-block]]") {
+			foundBlock = true
+		}
+	}
+	if !foundBlock {
+		t.Fatalf("global block completion missing block: %#v", blockList.Items)
+	}
+}
+
+func TestGlobalBlockCompletionReplacesSearchSyntax(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Source\n\nLocal block ^local-block\n\n[[^^loc"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md"))},
+			Position:     protocol.Position{Line: 4, Character: 7},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("no completion items")
+	}
+	for _, item := range list.Items {
+		if item.TextEdit != nil && strings.Contains(item.TextEdit.NewText, "[[notes/bbb#^local-block]]") {
+			if item.InsertText != "" {
+				t.Fatalf("global block item should use textEdit only, got insertText %q", item.InsertText)
+			}
+			if item.TextEdit.NewText != "[[notes/bbb#^local-block]]" {
+				t.Fatalf("global block item should replace search syntax with textEdit: %#v", item)
+			}
+			if item.TextEdit.Range.Start.Character != 0 || item.TextEdit.Range.End.Character != 7 {
+				t.Fatalf("global block textEdit range = %#v, want whole [[^^loc", item.TextEdit.Range)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing local block item: %#v", list.Items)
+}
+
 func TestDocumentSymbolHeadingTree(t *testing.T) {
 	idx := testIndex(t)
 

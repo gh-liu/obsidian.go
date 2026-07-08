@@ -165,6 +165,30 @@ func completeHeadings(idx *index.Index, targetPath, currentRel, prefix string) [
 	return items
 }
 
+func completeGlobalHeadings(idx *index.Index, prefix string) []protocol.CompletionItem {
+	prefixLower := strings.ToLower(prefix)
+	var items []protocol.CompletionItem
+	for _, entry := range idx.SnapshotPaths() {
+		doc := entry.Doc
+		if doc == nil {
+			continue
+		}
+		target := linkTargetForDoc(entry.Path, doc.ID)
+		for _, h := range doc.Headings {
+			if h == nil || (prefixLower != "" && !stringContainsLower(h.Text, prefixLower)) {
+				continue
+			}
+			items = append(items, protocol.CompletionItem{
+				Label:      h.Text,
+				Detail:     entry.Path,
+				InsertText: target + "#" + h.Text,
+				Kind:       protocol.CompletionItemKindField,
+			})
+		}
+	}
+	return items
+}
+
 func completeBlocks(idx *index.Index, targetPath, currentRel, prefix string) []protocol.CompletionItem {
 	resolvedPath := currentRel
 	if targetPath != "" {
@@ -196,6 +220,37 @@ func completeBlocks(idx *index.Index, targetPath, currentRel, prefix string) []p
 		})
 	}
 	return items
+}
+
+func completeGlobalBlocks(idx *index.Index, prefix string) []protocol.CompletionItem {
+	prefixLower := strings.ToLower(prefix)
+	var items []protocol.CompletionItem
+	for _, entry := range idx.SnapshotPaths() {
+		doc := entry.Doc
+		if doc == nil {
+			continue
+		}
+		target := linkTargetForDoc(entry.Path, doc.ID)
+		for _, b := range doc.Blocks {
+			if b == nil || (prefixLower != "" && !stringContainsLower(b.ID, prefixLower)) {
+				continue
+			}
+			items = append(items, protocol.CompletionItem{
+				Label:      b.ID,
+				Detail:     entry.Path + " — " + b.Preview,
+				InsertText: target + "#^" + b.ID,
+				Kind:       protocol.CompletionItemKindReference,
+			})
+		}
+	}
+	return items
+}
+
+func linkTargetForDoc(path, id string) string {
+	if id != "" {
+		return id
+	}
+	return strings.TrimSuffix(path, ".md")
 }
 
 func newBlockIDCompletion() protocol.CompletionItem {

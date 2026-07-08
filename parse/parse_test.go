@@ -364,6 +364,18 @@ More text ^another
 	}
 }
 
+func TestParseBlockIDIgnoresCaretInNormalText(t *testing.T) {
+	content := []byte(`64位机器寻址空间为2^48，即256TB，低128T为空户空间，高128T为内核空间；64位->2^64为16EB，中间的空间的不可访问由CPU来保证；
+`)
+	doc, err := Parse(content, "test.md")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(doc.Blocks) != 0 {
+		t.Fatalf("blocks = %#v, want none", doc.Blocks)
+	}
+}
+
 func TestParseStructuredBlockPreviewRequiresBlankLines(t *testing.T) {
 	content := []byte(`# Test
 
