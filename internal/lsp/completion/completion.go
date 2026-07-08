@@ -25,6 +25,9 @@ func ResolveCompletion(ctx context.Context, idx *index.Index, relPath, encoding 
 	byteOff := reqCtx.enc.CharToByte(reqCtx.line, reqCtx.cursorChar)
 	linkCtx := parseCursorContext(reqCtx.line, byteOff)
 	if linkCtx == nil {
+		if isBareBlockIDContext(reqCtx.lines, reqCtx.lineIdx, byteOff) {
+			return &protocol.CompletionList{Items: []protocol.CompletionItem{newBlockIDCompletion()}}, nil
+		}
 		// Cursor after a single '[' — signal incomplete to keep session open
 		if byteOff > 0 && byteOff <= len(reqCtx.line) && reqCtx.line[byteOff-1] == '[' {
 			return &protocol.CompletionList{IsIncomplete: true}, nil
@@ -164,10 +167,10 @@ func parseWikiLinkCursorContext(line string, byteOff int) map[string]string {
 		}
 	}
 
-	if afterHash >= 0 {
+	if afterHash >= 0 || afterCaret >= 0 {
 		if afterCaret >= 0 && byteOff-linkStart-2 >= afterCaret {
 			result["completeBlocks"] = "true"
-			result["targetPath"] = target
+			result["targetPath"] = strings.TrimSuffix(target, "#")
 			result["prefix"] = strings.TrimPrefix(inner[afterCaret+1:], " ")
 			return result
 		}
@@ -202,6 +205,7 @@ func parseWikiLinkParts(inner string) (target, anchorBlock, alias string) {
 
 func buildRequestContext(idx *index.Index, relPath, encoding string, params *protocol.CompletionParams) (*struct {
 	enc        position.Encoder
+	lines      []string
 	line       string
 	cursorChar int
 	lineIdx    int
@@ -221,15 +225,32 @@ func buildRequestContext(idx *index.Index, relPath, encoding string, params *pro
 	}
 	return &struct {
 		enc        position.Encoder
+		lines      []string
 		line       string
 		cursorChar int
 		lineIdx    int
 		currentRel string
 	}{
 		enc:        position.Encoder{Encoding: encoding},
+		lines:      lines,
 		line:       lines[lineIdx],
 		cursorChar: int(params.Position.Character),
 		lineIdx:    lineIdx,
 		currentRel: relPath,
 	}, true
+}
+
+func isBareBlockIDContext(lines []string, lineIdx, byteOff int) bool {
+	if lineIdx < 0 || lineIdx >= len(lines) {
+		return false
+	}
+	line := lines[lineIdx]
+	if byteOff != len(line) {
+		return false
+	}
+	if strings.TrimSpace(line) == "^" {
+		return lineIdx > 0 && lineIdx < len(lines)-1 && strings.TrimSpace(lines[lineIdx-1]) == "" && strings.TrimSpace(lines[lineIdx+1]) == ""
+	}
+	before, ok := strings.CutSuffix(line, "^")
+	return ok && strings.TrimSpace(before) != "" && strings.HasSuffix(before, " ")
 }

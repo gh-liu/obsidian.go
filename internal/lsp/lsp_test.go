@@ -498,6 +498,108 @@ func TestEmbedImageCompletionRespectsImagePaths(t *testing.T) {
 	}
 }
 
+func TestBlockCompletionShowsPreviewWithoutGeneratedID(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Source\n\nParagraph block content ^abc123\n\nTarget link [[#^"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 4, Character: 16},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("completion list is nil")
+	}
+
+	var foundExisting bool
+	for _, item := range list.Items {
+		if item.Label == "abc123" {
+			foundExisting = true
+			if item.Detail != "Paragraph block content" {
+				t.Fatalf("existing block detail = %q, want preview", item.Detail)
+			}
+		}
+		if item.Label == "Generate block ID" {
+			t.Fatal("wikilink block completion should not generate new block IDs")
+		}
+	}
+	if !foundExisting {
+		t.Fatalf("missing existing block completion: %#v", list.Items)
+	}
+}
+
+func TestBareCaretCompletionGeneratesBlockID(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Source\n\nStructured block content\n\n^\n"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 4, Character: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil || len(list.Items) != 1 {
+		t.Fatalf("items = %#v, want one generate item", list)
+	}
+	item := list.Items[0]
+	if item.Label != "Generate block ID" || item.InsertText == "" || strings.Contains(item.InsertText, "^") {
+		t.Fatalf("generated item = %#v", item)
+	}
+	if len(item.AdditionalTextEdits) != 0 {
+		t.Fatalf("bare caret generation should replace typed prefix directly: %#v", item.AdditionalTextEdits)
+	}
+}
+
+func TestInlineCaretCompletionGeneratesBlockID(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Source\n\nInline block content ^"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 2, Character: 22},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil || len(list.Items) != 1 {
+		t.Fatalf("items = %#v, want one generate item", list)
+	}
+	item := list.Items[0]
+	if item.Label != "Generate block ID" || item.InsertText == "" || strings.Contains(item.InsertText, "^") {
+		t.Fatalf("generated item = %#v", item)
+	}
+}
+
 func TestDocumentSymbolHeadingTree(t *testing.T) {
 	idx := testIndex(t)
 

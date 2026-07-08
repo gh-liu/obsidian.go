@@ -5,7 +5,8 @@ import "strings"
 // parseBlockID parses an explicit block ID marker (^block-id) from a line.
 // Returns nil if the line contains no block ID.
 // Skips ^ inside wiki links (preceded by # inside [[...]]).
-func parseBlockID(line string, lineIdx int) *Block {
+func parseBlockID(lines []string, idxInBody, lineIdx int) *Block {
+	line := lines[idxInBody]
 	idx := strings.LastIndex(line, "^")
 	if idx < 0 {
 		return nil
@@ -26,8 +27,27 @@ func parseBlockID(line string, lineIdx int) *Block {
 	if strings.Contains(id, " ") {
 		return nil
 	}
+	preview := strings.TrimSpace(line[:idx])
+	if preview == "" {
+		if idxInBody == 0 || idxInBody == len(lines)-1 || strings.TrimSpace(lines[idxInBody-1]) != "" || strings.TrimSpace(lines[idxInBody+1]) != "" {
+			return nil
+		}
+		for i := idxInBody - 2; i >= 0; i-- {
+			if strings.TrimSpace(lines[i]) == "" {
+				preview = strings.TrimSpace(strings.Join(lines[i+1:idxInBody-1], "\n"))
+				break
+			}
+			if i == 0 {
+				preview = strings.TrimSpace(strings.Join(lines[:idxInBody-1], "\n"))
+			}
+		}
+		if preview == "" {
+			return nil
+		}
+	}
 	return &Block{
-		ID: id,
+		ID:      id,
+		Preview: preview,
 		Range: Range{
 			Start: Pos{Line: lineIdx, Character: idx},
 			End:   Pos{Line: lineIdx, Character: len(line)},

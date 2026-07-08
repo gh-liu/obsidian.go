@@ -1,6 +1,8 @@
 package completion
 
 import (
+	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -189,10 +191,29 @@ func completeBlocks(idx *index.Index, targetPath, currentRel, prefix string) []p
 		items = append(items, protocol.CompletionItem{
 			Label:      b.ID,
 			InsertText: b.ID,
+			Detail:     b.Preview,
 			Kind:       protocol.CompletionItemKindReference,
 		})
 	}
 	return items
+}
+
+func newBlockIDCompletion() protocol.CompletionItem {
+	id := newBlockID()
+	return protocol.CompletionItem{
+		Label:      "Generate block ID",
+		InsertText: id,
+		Detail:     "Generate ^" + id,
+		Kind:       protocol.CompletionItemKindReference,
+	}
+}
+
+func newBlockID() string {
+	var b [3]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "block-id"
+	}
+	return fmt.Sprintf("%02x%02x%02x", b[0], b[1], b[2])
 }
 
 func completeAliases(idx *index.Index, targetPath, prefix string) []protocol.CompletionItem {

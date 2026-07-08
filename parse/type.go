@@ -44,8 +44,9 @@ type Heading struct {
 
 // Block represents an explicit block ID marker (^block-id).
 type Block struct {
-	ID    string
-	Range Range
+	ID      string
+	Preview string
+	Range   Range
 }
 
 // LinkKind distinguishes wiki links from markdown links.

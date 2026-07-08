@@ -364,6 +364,38 @@ More text ^another
 	}
 }
 
+func TestParseStructuredBlockPreviewRequiresBlankLines(t *testing.T) {
+	content := []byte(`# Test
+
+> quote line one
+> quote line two
+
+^quote-block
+
+After quote
+
+| A | B |
+| - | - |
+| 1 | 2 |
+^not-structured-without-blank-before
+`)
+	doc, err := Parse(content, "test.md")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1: %#v", len(doc.Blocks), doc.Blocks)
+	}
+	block := doc.Blocks[0]
+	if block.ID != "quote-block" {
+		t.Fatalf("block ID = %q, want quote-block", block.ID)
+	}
+	wantPreview := "> quote line one\n> quote line two"
+	if block.Preview != wantPreview {
+		t.Fatalf("preview = %q, want %q", block.Preview, wantPreview)
+	}
+}
+
 func TestParseCodeBlockFenceSkipsContent(t *testing.T) {
 	// # lines inside fenced code blocks must not be parsed as headings.
 	content := "" +

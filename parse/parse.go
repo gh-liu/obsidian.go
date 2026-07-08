@@ -90,7 +90,7 @@ func parseBody(content []byte, bodyStartLine int, doc *Doc) {
 		if h := parseHeading(line, lineIdx); h != nil {
 			doc.Headings = append(doc.Headings, h)
 		}
-		if b := parseBlockID(line, lineIdx); b != nil {
+		if b := parseBlockID(lines, i, lineIdx); b != nil {
 			doc.Blocks = append(doc.Blocks, b)
 		}
 		if l := parseLinks(line, lineIdx); l != nil {
