@@ -205,6 +205,12 @@ func parseWikiLinkCursorContext(line string, byteOff int) map[string]string {
 			result["prefix"] = strings.TrimPrefix(inner[afterCaret+1:], " ")
 			return result
 		}
+		if strings.HasSuffix(inner, "#") {
+			result["completeBlocks"] = "true"
+			result["targetPath"] = target
+			result["prefix"] = ""
+			return result
+		}
 		result["targetPath"] = target
 		result["prefix"] = inner[afterHash+1:]
 		_ = anchorBlock

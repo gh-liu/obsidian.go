@@ -46,7 +46,7 @@ func ResolveHover(ctx context.Context, idx *index.Index, relPath, encoding strin
 	if err != nil {
 		return nil, nil
 	}
-	value := hoverMarkdown(idx.GetByPath(targetPath), targetPath, content)
+	value := hoverMarkdown(idx.GetByPath(targetPath), targetPath, content, link.BlockRef)
 	if value == "" {
 		return nil, nil
 	}
@@ -59,17 +59,40 @@ func ResolveHover(ctx context.Context, idx *index.Index, relPath, encoding strin
 		Range: &rng,
 	}, nil
 }
-
-func hoverMarkdown(doc *parse.Doc, targetPath, content string) string {
+func hoverMarkdown(doc *parse.Doc, targetPath, content, blockRef string) string {
 	title := targetPath
 	if doc != nil && doc.Title != "" {
 		title = doc.Title
 	}
 	lines := previewLines(content, hoverPreviewLines)
+	if blockRef != "" {
+		lines = previewBlockLines(doc, blockRef)
+	}
 	if len(lines) == 0 {
 		return fmt.Sprintf("**%s**\n\n`%s`", title, targetPath)
 	}
 	return fmt.Sprintf("**%s**\n\n`%s`\n\n---\n%s", title, targetPath, strings.Join(lines, "\n"))
+}
+
+func previewBlockLines(doc *parse.Doc, blockRef string) []string {
+	if doc == nil {
+		return nil
+	}
+	for _, b := range doc.Blocks {
+		if b == nil || b.ID != blockRef {
+			continue
+		}
+		preview := strings.TrimSpace(b.Preview)
+		if preview == "" {
+			return nil
+		}
+		lines := strings.Split(preview, "\n")
+		if len(lines) > hoverPreviewLines {
+			lines = lines[:hoverPreviewLines]
+		}
+		return lines
+	}
+	return nil
 }
 
 func previewLines(content string, limit int) []string {

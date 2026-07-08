@@ -414,6 +414,37 @@ func TestCompletionInsertText(t *testing.T) {
 	idx.ClearContent("notes/bbb.md")
 }
 
+func TestAliasCompletionIncludesTitle(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Test\n\n[[test-aaa|"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 2, Character: 11},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("completion list is nil")
+	}
+	for _, item := range list.Items {
+		if item.Label == "Note AAA" && item.InsertText == "Note AAA" {
+			return
+		}
+	}
+	t.Fatalf("missing title alias completion: %#v", list.Items)
+}
+
 func TestEmbedImageCompletion(t *testing.T) {
 	idx := testIndex(t)
 	imagePath := filepath.Join(idx.Root(), "assets", "cover.png")
@@ -536,6 +567,63 @@ func TestBlockCompletionShowsPreviewWithoutGeneratedID(t *testing.T) {
 	}
 	if !foundExisting {
 		t.Fatalf("missing existing block completion: %#v", list.Items)
+	}
+}
+
+func TestBlockCompletionAfterHashCompletesCaret(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Source\n\nParagraph block content ^abc123\n\nTarget link [[#"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	list, err := completion.ResolveCompletion(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md")),
+			},
+			Position: protocol.Position{Line: 4, Character: 15},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveCompletion: %v", err)
+	}
+	if list == nil {
+		t.Fatal("completion list is nil")
+	}
+	for _, item := range list.Items {
+		if item.Label == "abc123" && item.InsertText == "^abc123" {
+			return
+		}
+	}
+	t.Fatalf("missing block completion with caret insert text: %#v", list.Items)
+}
+
+func TestHoverWikiBlockLinkShowsBlockPreview(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Source\n\nTarget block content ^abc123\n\nHover [[#^abc123]]"
+	if err := idx.SetContent("notes/bbb.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/bbb.md")
+	defer idx.ClearContent("notes/bbb.md")
+
+	hover, err := ResolveHover(context.Background(), idx, "notes/bbb.md", "utf-8", &protocol.HoverParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/bbb.md"))},
+			Position:     protocol.Position{Line: 4, Character: 11},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveHover: %v", err)
+	}
+	if hover == nil {
+		t.Fatal("got nil hover")
+	}
+	if !strings.Contains(hover.Contents.Value, "Target block content") {
+		t.Fatalf("hover content %q does not contain block preview", hover.Contents.Value)
 	}
 }
 

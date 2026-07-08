@@ -204,17 +204,24 @@ func completeBlocks(idx *index.Index, targetPath, currentRel, prefix string) []p
 	}
 
 	prefixLower := strings.ToLower(prefix)
+	insertPrefix := ""
+	matchPrefix := prefixLower
+	if prefix == "" {
+		insertPrefix = "^"
+	} else if strings.HasPrefix(prefix, "^") {
+		matchPrefix = strings.TrimPrefix(prefixLower, "^")
+	}
 	var items []protocol.CompletionItem
 	for _, b := range doc.Blocks {
 		if b == nil {
 			continue
 		}
-		if prefixLower != "" && !stringContainsLower(b.ID, prefixLower) {
+		if matchPrefix != "" && !stringContainsLower(b.ID, matchPrefix) {
 			continue
 		}
 		items = append(items, protocol.CompletionItem{
 			Label:      b.ID,
-			InsertText: b.ID,
+			InsertText: insertPrefix + b.ID,
 			Detail:     b.Preview,
 			Kind:       protocol.CompletionItemKindReference,
 		})
@@ -286,6 +293,13 @@ func completeAliases(idx *index.Index, targetPath, prefix string) []protocol.Com
 
 	prefixLower := strings.ToLower(prefix)
 	var items []protocol.CompletionItem
+	if doc.Title != "" && (prefixLower == "" || stringContainsLower(doc.Title, prefixLower)) {
+		items = append(items, protocol.CompletionItem{
+			Label:      doc.Title,
+			InsertText: doc.Title,
+			Kind:       protocol.CompletionItemKindText,
+		})
+	}
 	for _, a := range doc.Aliases {
 		if prefixLower != "" && !stringContainsLower(a, prefixLower) {
 			continue
