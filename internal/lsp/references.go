@@ -24,9 +24,34 @@ func ResolveReferences(ctx context.Context, idx *index.Index, relPath, encoding 
 	}
 
 	_ = lines
+	lineIdx := int(params.Position.Line)
+	if lineIdx >= 0 && lineIdx < len(lines) {
+		byteOff := enc.CharToByte(lines[lineIdx], int(params.Position.Character))
+		if block := blockAtPosition(doc, lineIdx, byteOff); block != nil {
+			return blockReferenceLocations(idx, relPath, block.ID, enc), nil
+		}
+		if heading := headingAtPosition(doc, lineIdx, byteOff); heading != nil {
+			refs, _ := resolveHeadingReferences(idx, relPath, heading, enc, params.Context.IncludeDeclaration)
+			return refs, nil
+		}
+	}
 
-	// File-level backlinks. Heading references are intentionally not resolved yet.
 	return resolveFileReferences(idx, relPath, enc), nil
+}
+
+func blockAtPosition(doc *parse.Doc, lineIdx, byteOff int) *parse.Block {
+	for _, block := range doc.Blocks {
+		if block == nil {
+			continue
+		}
+		if lineIdx != block.Range.Start.Line {
+			continue
+		}
+		if byteOff >= block.Range.Start.Character && byteOff < block.Range.End.Character {
+			return block
+		}
+	}
+	return nil
 }
 
 func headingAtPosition(doc *parse.Doc, lineIdx, byteOff int) *parse.Heading {

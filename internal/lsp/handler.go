@@ -73,6 +73,7 @@ func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializePar
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"[", "#", "|", "^"},
 			},
+			Experimental: map[string]any{"inlayHintProvider": true},
 		},
 		ServerInfo: &protocol.ServerInfo{
 			Name:    "obsidian-ls",
@@ -287,6 +288,13 @@ func (h *Handler) Formatting(ctx context.Context, params *protocol.DocumentForma
 		},
 		NewText: string(formatted),
 	}}, nil
+}
+
+func (h *Handler) Request(ctx context.Context, method string, params any) (any, error) {
+	if method == "textDocument/inlayHint" {
+		return h.requestInlayHint(ctx, params)
+	}
+	return nil, nil
 }
 
 // --- helpers ---

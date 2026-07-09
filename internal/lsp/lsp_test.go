@@ -261,6 +261,118 @@ func TestReferences(t *testing.T) {
 	}
 }
 
+func TestInlayHintBlockReferenceCount(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Block Target\n\nParagraph ^abc123\n\n[[#^abc123]]\n[[notes/blocks#^abc123]]\n"
+	if err := idx.SetContent("notes/blocks.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/blocks.md")
+
+	hints, err := ResolveInlayHint(context.Background(), idx, "notes/blocks.md", "utf-8", &InlayHintParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/blocks.md")),
+		},
+		Range: protocol.Range{
+			Start: protocol.Position{Line: 0, Character: 0},
+			End:   protocol.Position{Line: 10, Character: 0},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveInlayHint: %v", err)
+	}
+	if len(hints) != 1 {
+		t.Fatalf("hints = %d, want 1: %#v", len(hints), hints)
+	}
+	if hints[0].Label != "[2]ref" {
+		t.Fatalf("label = %#v, want [2]ref", hints[0].Label)
+	}
+	if hints[0].Position.Line != 2 || hints[0].Position.Character != 17 {
+		t.Fatalf("position = %#v, want line 2 char 17", hints[0].Position)
+	}
+}
+
+func TestInlayHintHeadingReferenceCount(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Heading Target\n\n[[#heading-target]]\n[[notes/headings#Heading Target]]\n"
+	if err := idx.SetContent("notes/headings.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/headings.md")
+
+	hints, err := ResolveInlayHint(context.Background(), idx, "notes/headings.md", "utf-8", &InlayHintParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/headings.md")),
+		},
+		Range: protocol.Range{
+			Start: protocol.Position{Line: 0, Character: 0},
+			End:   protocol.Position{Line: 10, Character: 0},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveInlayHint: %v", err)
+	}
+	if len(hints) != 1 {
+		t.Fatalf("hints = %d, want 1: %#v", len(hints), hints)
+	}
+	if hints[0].Label != "[2]ref" {
+		t.Fatalf("label = %#v, want [2]ref", hints[0].Label)
+	}
+	if hints[0].Position.Line != 0 || hints[0].Position.Character != 16 {
+		t.Fatalf("position = %#v, want line 0 char 16", hints[0].Position)
+	}
+}
+
+func TestReferencesOnBlockID(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Block Target\n\nParagraph ^abc123\n\n[[#^abc123]]\n[[notes/blocks#^abc123]]\n"
+	if err := idx.SetContent("notes/blocks.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/blocks.md")
+
+	locs, err := ResolveReferences(context.Background(), idx, "notes/blocks.md", "utf-8", &protocol.ReferenceParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/blocks.md")),
+			},
+			Position: protocol.Position{Line: 2, Character: 12},
+		},
+		Context: protocol.ReferenceContext{IncludeDeclaration: false},
+	})
+	if err != nil {
+		t.Fatalf("ResolveReferences: %v", err)
+	}
+	if len(locs) != 2 {
+		t.Fatalf("locations = %d, want 2: %#v", len(locs), locs)
+	}
+}
+
+func TestReferencesOnHeading(t *testing.T) {
+	idx := testIndex(t)
+	content := "# Heading Target\n\n[[#heading-target]]\n[[notes/headings#Heading Target]]\n"
+	if err := idx.SetContent("notes/headings.md", []byte(content)); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	idx.FlushReparse("notes/headings.md")
+
+	locs, err := ResolveReferences(context.Background(), idx, "notes/headings.md", "utf-8", &protocol.ReferenceParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.DocumentURI(filepath.Join(idx.Root(), "notes/headings.md")),
+			},
+			Position: protocol.Position{Line: 0, Character: 3},
+		},
+		Context: protocol.ReferenceContext{IncludeDeclaration: false},
+	})
+	if err != nil {
+		t.Fatalf("ResolveReferences: %v", err)
+	}
+	if len(locs) != 2 {
+		t.Fatalf("locations = %d, want 2: %#v", len(locs), locs)
+	}
+}
+
 func TestDiagnostics(t *testing.T) {
 	idx := testIndex(t)
 
