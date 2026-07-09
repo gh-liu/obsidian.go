@@ -26,7 +26,7 @@ func diagnoseFile(ctx context.Context, conn jsonrpc2.Conn, idx *index.Index, rel
 	enc := position.Encoder{Encoding: encoding}
 	var diags []protocol.Diagnostic
 	for _, link := range doc.Links {
-		if link == nil || link.Target == "" {
+		if link == nil || link.Kind != parse.LinkWiki || link.Target == "" {
 			continue
 		}
 		if idx.ResolveLinkTargetToPath(link.Target) != "" {
