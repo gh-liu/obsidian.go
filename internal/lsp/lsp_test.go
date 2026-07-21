@@ -163,8 +163,10 @@ func TestWorkspaceSymbolNoteTitlesWithTagFilters(t *testing.T) {
 		want  []string
 	}{
 		{"title", "aaa", []string{"Note AAA"}},
+		{"alias", "bbb-alias", []string{"Note BBB"}},
 		{"tag", "#tag-b", []string{"Note BBB"}},
 		{"title and tag", "note #tag-c", []string{"Note CCC"}},
+		{"alias and tag", "bbb-alias #tag-b", []string{"Note BBB"}},
 		{"tag mismatch", "aaa #tag-b", nil},
 	}
 

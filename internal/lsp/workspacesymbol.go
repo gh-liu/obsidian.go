@@ -12,7 +12,7 @@ import (
 
 const maxWorkspaceSymbols = 200
 
-// ResolveWorkspaceSymbol searches note titles, with optional #tag filters.
+// ResolveWorkspaceSymbol searches note names, titles, and aliases, with optional #tag filters.
 func ResolveWorkspaceSymbol(ctx context.Context, idx *index.Index, encoding string, params *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
 	query := strings.ToLower(params.Query)
 	tags, keyword := extractTagFilter(query)
@@ -39,7 +39,16 @@ func ResolveWorkspaceSymbol(ctx context.Context, idx *index.Index, encoding stri
 		if doc.Title != "" {
 			displayName = doc.Title
 		}
-		if keyword == "" || match(name, keyword) || match(displayName, keyword) {
+		matched := keyword == "" || match(name, keyword) || match(displayName, keyword)
+		if !matched {
+			for _, alias := range doc.Aliases {
+				if match(alias, keyword) {
+					matched = true
+					break
+				}
+			}
+		}
+		if matched {
 			results = append(results, protocol.SymbolInformation{
 				Name:     displayName,
 				Kind:     protocol.SymbolKindFile,
